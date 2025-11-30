@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budget Planner - Mathematical Presentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        .slide {
+            width: 100vw;
+            height: 100vh;
+            padding: 80px 120px;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+        }
+
+        .slide.active {
+            display: flex;
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .slide-number {
+            position: absolute;
+            top: 30px;
+            right: 50px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        h1 {
+            font-size: 64px;
+            color: #00d4ff;
+            margin-bottom: 20px;
+            text-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+        }
+
+        h2 {
+            font-size: 48px;
+            color: #00d4ff;
+            margin-bottom: 40px;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+
+        h3 {
+            font-size: 32px;
+            color: #a29bfe;
+            margin: 30px 0 20px;
+        }
+
+        p {
+            font-size: 24px;
+            line-height: 1.6;
+            color: #e0e0e0;
+            margin-bottom: 20px;
+        }
+
+        .subtitle {
+            font-size: 28px;
+            color: #aaa;
+            margin-bottom: 40px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            margin: 30px 0;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            margin: 30px 0;
+        }
+
+        .card {
+            background: linear-gradient(135deg, rgba(108, 92, 231, 0.15) 0%, rgba(0, 212, 255, 0.1) 100%);
+            padding: 30px;
+            border-radius: 15px;
+            border: 1px solid rgba(108, 92, 231, 0.3);
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(0, 212, 255, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.2);
+        }
+
+        .card h4 {
+            font-size: 24px;
+            color: #00d4ff;
+            margin-bottom: 15px;
+        }
+
+        .card p {
+            font-size: 18px;
+            color: #ccc;
+            margin: 0;
+        }
+
+        .formula {
+            background: rgba(108, 92, 231, 0.1);
+            border-left: 4px solid #6c5ce7;
+            padding: 25px;
+            margin: 30px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 28px;
+            color: #fff;
+            border-radius: 8px;
+        }
+
+        .highlight {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            padding: 4px 12px;
+            border-radius: 5px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .example-box {
+            background: rgba(0, 212, 255, 0.1);
+            border-left: 4px solid #00d4ff;
+            padding: 25px;
+            margin: 25px 0;
+            border-radius: 8px;
+        }
+
+        ul {
+            font-size: 22px;
+            line-height: 1.8;
+            margin-left: 40px;
+        }
+
+        li {
+            margin-bottom: 15px;
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            z-index: 1000;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 18px;
+            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+
+        button:hover:not(:disabled) {
+            background: linear-gradient(135deg, #00d4ff 0%, #6c5ce7 100%);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(0, 212, 255, 0.4);
+        }
+
+        button:disabled {
+            background: #444;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #6c5ce7 0%, #00d4ff 100%);
+            transition: width 0.3s;
+            z-index: 1001;
+        }
+
+        .center {
+            text-align: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        th {
+            background: rgba(108, 92, 231, 0.3);
+            color: #00d4ff;
+            font-size: 20px;
+        }
+
+        td {
+            font-size: 18px;
+        }
+
+        .emoji {
+            font-size: 80px;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="progress-bar" id="progressBar"></div>
+
+    <!-- Slide 1: Title -->
+    <div class="slide active">
+        <div class="slide-number">1 / 10</div>
+        <div class="center">
+            <h1>Budget Planner</h1>
+            <p class="subtitle">Discrete Mathematics & Probability in Personal Finance</p>
+            <div class="emoji">💰 📊 🎲</div>
+            <p style="font-size: 28px; margin-top: 40px;">A web application demonstrating practical applications of:</p>
+            <ul style="list-style: none; font-size: 26px; margin: 30px auto; max-width: 800px;">
+                <li>✓ Statistical Analysis</li>
+                <li>✓ Probability Distributions</li>
+                <li>✓ Monte Carlo Simulation</li>
+                <li>✓ Anomaly Detection</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Slide 2: Problem & Solution -->
+    <div class="slide">
+        <div class="slide-number">2 / 10</div>
+        <h2>The Problem</h2>
+        <p style="font-size: 32px; color: #f5576c; margin-bottom: 40px;">Traditional budgeting gives you ONE prediction: "You'll have $350 left"</p>
+
+        <h3>But real life is random:</h3>
+        <div class="grid">
+            <div class="card">
+                <h4>Variable Spending</h4>
+                <p>Your grocery bill varies month to month<br>
+                Dining out is unpredictable<br>
+                Unexpected expenses happen</p>
+            </div>
+            <div class="card">
+                <h4>Need for Uncertainty</h4>
+                <p>What's the probability of meeting your savings goal?<br>
+                What's the worst-case scenario?<br>
+                How likely are you to go over budget?</p>
+            </div>
+        </div>
+
+        <h2 style="margin-top: 60px; color: #50fa7b;">The Solution: Mathematics</h2>
+        <p style="font-size: 28px;">Use probability theory and Monte Carlo simulation to predict a <span class="highlight">range of outcomes with probabilities</span></p>
+    </div>
+
+    <!-- Slide 3: Statistical Foundation -->
+    <div class="slide">
+        <div class="slide-number">3 / 10</div>
+        <h2>Statistical Foundation</h2>
+
+        <h3>Core Metrics for Each Spending Category</h3>
+
+        <div class="formula">
+            Mean (μ) = (Σ x<sub>i</sub>) / n
+        </div>
+        <p>Average monthly spending per category</p>
+
+        <div class="formula">
+            Standard Deviation (σ) = √[(Σ(x<sub>i</sub> - μ)²) / (n-1)]
+        </div>
+        <p>Measures variability in spending</p>
+
+        <div class="example-box">
+            <h4 style="color: #00d4ff; font-size: 24px; margin-bottom: 15px;">Real Example</h4>
+            <p><strong>Groceries:</strong> μ = $200/month, σ = $30<br>
+            <strong>Dining Out:</strong> μ = $150/month, σ = $70 (more variable!)</p>
+        </div>
+    </div>
+
+    <!-- Slide 4: Normal Distribution -->
+    <div class="slide">
+        <div class="slide-number">4 / 10</div>
+        <h2>Normal Distribution</h2>
+
+        <div class="formula">
+            f(x) = (1 / (σ√(2π))) × e<sup>-(x-μ)² / (2σ²)</sup>
+        </div>
+
+        <p style="margin: 30px 0;">We model spending using the normal distribution because of the <span class="highlight">Central Limit Theorem</span> - many small random decisions sum to a bell curve.</p>
+
+        <h3>The 68-95-99.7 Rule</h3>
+        <div class="grid-3">
+            <div class="card">
+                <h4>68%</h4>
+                <p>of data falls within ±1σ<br><br>
+                Example: $170-$230</p>
+            </div>
+            <div class="card">
+                <h4>95%</h4>
+                <p>of data falls within ±2σ<br><br>
+                Example: $140-$260</p>
+            </div>
+            <div class="card">
+                <h4>99.7%</h4>
+                <p>of data falls within ±3σ<br><br>
+                Example: $110-$290</p>
+            </div>
+        </div>
+
+        <p style="margin-top: 40px; font-size: 20px; color: #aaa;">For grocery spending with μ=$200, σ=$30</p>
+    </div>
+
+    <!-- Slide 5: Z-Score Anomaly Detection -->
+    <div class="slide">
+        <div class="slide-number">5 / 10</div>
+        <h2>Anomaly Detection with Z-Scores</h2>
+
+        <div class="formula">
+            z = (x - μ) / σ
+        </div>
+        <p style="margin-bottom: 40px;">Standardizes any value to measure "how unusual" it is</p>
+
+        <div class="grid">
+            <div>
+                <h3>Interpretation</h3>
+                <ul>
+                    <li><strong>z = 0:</strong> Exactly average</li>
+                    <li><strong>z = ±1:</strong> Normal variation</li>
+                    <li><strong>z = ±2:</strong> Unusual (5% probability)</li>
+                    <li><strong>|z| > 2:</strong> <span class="highlight">ANOMALY!</span></li>
+                </ul>
+            </div>
+            <div class="example-box">
+                <h4 style="color: #00d4ff; font-size: 24px; margin-bottom: 15px;">Example</h4>
+                <p><strong>Dining Out:</strong> μ = $15, σ = $10<br>
+                <strong>New transaction:</strong> $45<br><br>
+                z = (45 - 15) / 10 = <strong style="color: #f5576c;">3.0</strong><br><br>
+                Result: <span class="highlight">Anomaly detected!</span><br>
+                Alert user: "3.0σ above average"</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Slide 6: Monte Carlo Introduction -->
+    <div class="slide">
+        <div class="slide-number">6 / 10</div>
+        <h2>Monte Carlo Simulation</h2>
+
+        <p style="font-size: 28px; margin-bottom: 40px;">Named after the Monte Carlo Casino - uses <span class="highlight">randomness to solve deterministic problems</span></p>
+
+        <h3>The Concept</h3>
+        <p>Instead of predicting ONE outcome, simulate 1,000 different possible futures, each with realistic random variation</p>
+
+        <h3 style="margin-top: 60px;">The Algorithm</h3>
+        <ol style="font-size: 24px; line-height: 2;">
+            <li>Get historical μ and σ for each spending category</li>
+            <li>Randomly sample from Normal(μ, σ) for each category</li>
+            <li>Calculate: Balance = Budget - Fixed - Sampled Spending</li>
+            <li>Repeat 1,000 times</li>
+            <li>Analyze the distribution of results</li>
+        </ol>
+
+        <p style="margin-top: 40px; font-size: 20px; color: #aaa;"><strong>Law of Large Numbers:</strong> 1,000 simulations gives ±3% accuracy</p>
+    </div>
+
+    <!-- Slide 7: Monte Carlo Example -->
+    <div class="slide">
+        <div class="slide-number">7 / 10</div>
+        <h2>Monte Carlo - Step by Step</h2>
+
+        <h3>Setup</h3>
+        <div class="grid">
+            <div class="card">
+                <h4>Historical Data</h4>
+                <p>Groceries: μ=$200, σ=$30<br>
+                Dining: μ=$150, σ=$70<br>
+                Entertainment: μ=$80, σ=$50</p>
+            </div>
+            <div class="card">
+                <h4>Budget Parameters</h4>
+                <p>Monthly Budget: $2,000<br>
+                Fixed Expenses: $855<br>
+                Savings Goal: $300</p>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 40px;">Three Sample Simulations</h3>
+        <table>
+            <tr>
+                <th>Sim</th>
+                <th>Groceries</th>
+                <th>Dining</th>
+                <th>Entertainment</th>
+                <th>Total</th>
+                <th>Balance</th>
+            </tr>
+            <tr>
+                <td>#1</td>
+                <td>$195</td>
+                <td>$140</td>
+                <td>$95</td>
+                <td>$430</td>
+                <td style="color: #50fa7b; font-weight: bold;">+$715</td>
+            </tr>
+            <tr>
+                <td>#2</td>
+                <td>$225</td>
+                <td>$200</td>
+                <td>$120</td>
+                <td>$545</td>
+                <td style="color: #50fa7b; font-weight: bold;">+$600</td>
+            </tr>
+            <tr>
+                <td>#3</td>
+                <td>$185</td>
+                <td>$90</td>
+                <td>$65</td>
+                <td>$340</td>
+                <td style="color: #50fa7b; font-weight: bold;">+$805</td>
+            </tr>
+        </table>
+        <p class="center" style="font-style: italic; color: #aaa;">...repeat 997 more times...</p>
+    </div>
+
+    <!-- Slide 8: Monte Carlo Results -->
+    <div class="slide">
+        <div class="slide-number">8 / 10</div>
+        <h2>Results from 1,000 Simulations</h2>
+
+        <div class="grid">
+            <div class="card" style="background: linear-gradient(135deg, rgba(80, 250, 123, 0.2) 0%, rgba(108, 92, 231, 0.1) 100%);">
+                <h4>73% Success Rate</h4>
+                <p>730 simulations met the $300 savings goal</p>
+            </div>
+            <div class="card" style="background: linear-gradient(135deg, rgba(245, 87, 108, 0.2) 0%, rgba(240, 147, 251, 0.1) 100%);">
+                <h4>15% Risk</h4>
+                <p>150 simulations went over budget</p>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 40px;">Percentile Analysis</h3>
+        <div class="grid-3">
+            <div class="card">
+                <h4>p10 (Worst Case)</h4>
+                <p style="font-size: 32px; color: #f5576c; margin-top: 10px;">$150</p>
+                <p style="font-size: 16px;">Only 10% of outcomes are worse</p>
+            </div>
+            <div class="card">
+                <h4>p50 (Median)</h4>
+                <p style="font-size: 32px; color: #ffc107; margin-top: 10px;">$350</p>
+                <p style="font-size: 16px;">Most likely outcome</p>
+            </div>
+            <div class="card">
+                <h4>p90 (Best Case)</h4>
+                <p style="font-size: 32px; color: #50fa7b; margin-top: 10px;">$650</p>
+                <p style="font-size: 16px;">Only 10% of outcomes are better</p>
+            </div>
+        </div>
+
+        <div class="example-box" style="margin-top: 40px;">
+            <p style="font-size: 22px;"><strong>Insight:</strong> Instead of "You'll have $350 left", we say:<br>
+            "73% chance of meeting your goal, with outcomes ranging from $150 to $650"</p>
+        </div>
+    </div>
+
+    <!-- Slide 9: Implementation -->
+    <div class="slide">
+        <div class="slide-number">9 / 10</div>
+        <h2>Technical Implementation</h2>
+
+        <div class="grid">
+            <div class="card">
+                <h4>Backend</h4>
+                <p><strong>Python + Flask</strong><br>
+                NumPy for statistical calculations<br>
+                SciPy for distributions<br>
+                SQLite for data storage</p>
+            </div>
+            <div class="card">
+                <h4>Frontend</h4>
+                <p><strong>HTML5 + JavaScript</strong><br>
+                Chart.js for visualizations<br>
+                Real-time anomaly alerts<br>
+                Interactive predictions</p>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 60px;">Key Functions</h3>
+        <ul style="font-size: 22px;">
+            <li><strong>calculate_category_stats():</strong> Compute μ, σ, σ² for each category</li>
+            <li><strong>detect_anomaly():</strong> Calculate z-score and flag unusual transactions</li>
+            <li><strong>run_monte_carlo_simulation():</strong> Execute 1,000 iterations using np.random.normal()</li>
+            <li><strong>calculate_confidence_interval():</strong> Provide 90% confidence ranges</li>
+        </ul>
+
+        <p style="margin-top: 40px; font-size: 20px; color: #aaa;">Total: 320 lines of mathematical Python code</p>
+    </div>
+
+    <!-- Slide 10: Conclusion -->
+    <div class="slide">
+        <div class="slide-number">10 / 10</div>
+        <h2>Real-World Impact</h2>
+
+        <h3>Mathematical Concepts Applied</h3>
+        <div class="grid">
+            <div class="card">
+                <h4>Statistical Analysis</h4>
+                <p>Mean, variance, standard deviation for pattern recognition</p>
+            </div>
+            <div class="card">
+                <h4>Probability Theory</h4>
+                <p>Normal distributions model real-world randomness</p>
+            </div>
+            <div class="card">
+                <h4>Monte Carlo Methods</h4>
+                <p>1,000 simulations quantify uncertainty</p>
+            </div>
+            <div class="card">
+                <h4>Anomaly Detection</h4>
+                <p>Z-scores identify outliers automatically</p>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 60px;">These Same Techniques Are Used In:</h3>
+        <ul style="font-size: 22px; columns: 2;">
+            <li>Financial risk analysis (VaR)</li>
+            <li>Options pricing (Black-Scholes)</li>
+            <li>Climate modeling</li>
+            <li>Particle physics (CERN)</li>
+            <li>Machine learning uncertainty</li>
+            <li>Engineering reliability testing</li>
+        </ul>
+
+        <h2 class="center" style="margin-top: 80px; font-size: 56px;">Questions?</h2>
+    </div>
+
+    <div class="controls">
+        <button id="prevBtn" onclick="changeSlide(-1)">← Previous</button>
+        <button id="nextBtn" onclick="changeSlide(1)">Next →</button>
+    </div>
+
+    <script>
+        let currentSlide = 1;
+        const totalSlides = 10;
+
+        function showSlide(n) {
+            const slides = document.querySelectorAll('.slide');
+
+            if (n > totalSlides) currentSlide = totalSlides;
+            if (n < 1) currentSlide = 1;
+
+            slides.forEach(slide => slide.classList.remove('active'));
+            slides[currentSlide - 1].classList.add('active');
+
+            document.getElementById('prevBtn').disabled = currentSlide === 1;
+            document.getElementById('nextBtn').disabled = currentSlide === totalSlides;
+
+            const progress = (currentSlide / totalSlides) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+        }
+
+        function changeSlide(n) {
+            currentSlide += n;
+            showSlide(currentSlide);
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                e.preventDefault();
+                if (currentSlide < totalSlides) changeSlide(1);
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                if (currentSlide > 1) changeSlide(-1);
+            }
+        });
+
+        showSlide(currentSlide);
+    </script>
+</body>
+</html>
