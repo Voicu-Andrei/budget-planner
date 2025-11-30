@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup - Budget Planner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="setup-body">
+    <div class="setup-container">
+        <!-- Step 1: Name -->
+        <div id="step-name" class="setup-step active">
+            <div class="setup-card">
+                <h1>Welcome to Budget Planner!</h1>
+                <p>Let's get you started on your journey to better financial management.</p>
+
+                <div class="form-group">
+                    <label for="user-name">What's your name?</label>
+                    <input type="text" id="user-name" class="form-control" placeholder="Enter your name">
+                </div>
+
+                <button onclick="nextStep()" class="btn btn-primary">Get Started</button>
+            </div>
+        </div>
+
+        <!-- Step 2: Full Setup -->
+        <div id="step-setup" class="setup-step">
+            <div class="setup-card">
+                <h1>Let's Set You Up!</h1>
+
+                <div class="form-group">
+                    <label for="monthly-budget">Monthly Income/Budget</label>
+                    <input type="number" id="monthly-budget" class="form-control" placeholder="2000" step="0.01">
+                </div>
+
+                <div class="form-group">
+                    <label>Fixed Monthly Expenses</label>
+                    <div id="fixed-expenses-list">
+                        <!-- Expenses will be added here -->
+                    </div>
+                    <button onclick="addExpense()" class="btn btn-secondary">+ Add Fixed Expense</button>
+                </div>
+
+                <div class="form-group">
+                    <label for="savings-goal">Monthly Savings Goal</label>
+                    <input type="number" id="savings-goal" class="form-control" placeholder="300" step="0.01">
+                </div>
+
+                <div class="form-group">
+                    <label for="savings-purpose">What are you saving for? (optional)</label>
+                    <input type="text" id="savings-purpose" class="form-control" placeholder="Emergency fund, vacation, etc.">
+                </div>
+
+                <div class="button-group">
+                    <button onclick="submitSetup(false)" class="btn btn-primary">Start Fresh</button>
+                    <button onclick="submitSetup(true)" class="btn btn-outline">Load Demo Data</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let expenseCount = 0;
+
+        function nextStep() {
+            const name = document.getElementById('user-name').value.trim();
+            if (!name) {
+                alert('Please enter your name');
+                return;
+            }
+
+            // Save name
+            fetch('/setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name })
+            });
+
+            // Show next step
+            document.getElementById('step-name').classList.remove('active');
+            document.getElementById('step-setup').classList.add('active');
+        }
+
+        function addExpense() {
+            expenseCount++;
+            const container = document.getElementById('fixed-expenses-list');
+
+            const expenseDiv = document.createElement('div');
+            expenseDiv.className = 'expense-item';
+            expenseDiv.innerHTML = `
+                <input type="text" class="form-control expense-name" placeholder="e.g., Rent">
+                <input type="number" class="form-control expense-amount" placeholder="Amount" step="0.01">
+                <select class="form-control expense-frequency">
+                    <option value="monthly">Monthly</option>
+                    <option value="weekly">Weekly</option>
+                </select>
+                <button onclick="this.parentElement.remove()" class="btn btn-danger-small">×</button>
+            `;
+
+            container.appendChild(expenseDiv);
+        }
+
+        function submitSetup(loadDemo) {
+            const monthlyBudget = parseFloat(document.getElementById('monthly-budget').value);
+            const savingsGoal = parseFloat(document.getElementById('savings-goal').value);
+            const savingsPurpose = document.getElementById('savings-purpose').value;
+
+            if (!monthlyBudget || !savingsGoal) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            // Collect expenses
+            const expenses = [];
+            document.querySelectorAll('.expense-item').forEach(item => {
+                const name = item.querySelector('.expense-name').value;
+                const amount = parseFloat(item.querySelector('.expense-amount').value);
+                const frequency = item.querySelector('.expense-frequency').value;
+
+                if (name && amount) {
+                    expenses.push({ name, amount, frequency });
+                }
+            });
+
+            // Submit
+            fetch('/setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    monthly_budget: monthlyBudget,
+                    savings_goal: savingsGoal,
+                    savings_purpose: savingsPurpose,
+                    fixed_expenses: expenses,
+                    load_demo: loadDemo
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = '/dashboard';
+                }
+            });
+        }
+
+        // Add one expense field by default
+        addExpense();
+    </script>
+</body>
+</html>

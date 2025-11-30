@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Analysis - Budget Planner{% endblock %}
+
+{% block content %}
+<div class="analysis-page">
+    <h1>Spending Analysis</h1>
+
+    <!-- Overview Charts -->
+    <div class="charts-grid">
+        <div class="card">
+            <h3>Current Month Breakdown</h3>
+            <canvas id="pie-chart"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Last 6 Months Trend</h3>
+            <canvas id="trend-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- Category Breakdown -->
+    <h2>Category Breakdown</h2>
+
+    {% for category in categories %}
+        {% set stats = category_stats.get(category) %}
+        <div class="card category-card">
+            <h3>{{ category }}</h3>
+
+            {% if stats %}
+                <div class="category-stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-label">Average per Month</div>
+                        <div class="stat-value">${{ "%.2f"|format(stats.mean) }}</div>
+                    </div>
+
+                    <div class="stat-box">
+                        <div class="stat-label">Range</div>
+                        <div class="stat-value">${{ "%.2f"|format(stats.min) }} - ${{ "%.2f"|format(stats.max) }}</div>
+                    </div>
+
+                    <div class="stat-box">
+                        <div class="stat-label">Standard Deviation</div>
+                        <div class="stat-value">±${{ "%.2f"|format(stats.std_dev) }}</div>
+                    </div>
+
+                    <div class="stat-box">
+                        <div class="stat-label">Transactions</div>
+                        <div class="stat-value">{{ stats.count }}</div>
+                    </div>
+                </div>
+
+                <div class="mini-chart-container">
+                    <canvas id="chart-{{ category|replace(' ', '-')|replace('&', 'and') }}"></canvas>
+                </div>
+            {% else %}
+                <p class="no-data">No transactions in this category yet.</p>
+            {% endif %}
+        </div>
+    {% endfor %}
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Current month pie chart
+    const pieData = {{ current_month_data | tojson }};
+    const categories = {{ categories | tojson }};
+
+    const pieCtx = document.getElementById('pie-chart').getContext('2d');
+    new Chart(pieCtx, {
+        type: 'pie',
+        data: {
+            labels: Object.keys(pieData),
+            datasets: [{
+                data: Object.values(pieData),
+                backgroundColor: [
+                    '#3b82f6',
+                    '#10b981',
+                    '#f59e0b',
+                    '#ef4444',
+                    '#8b5cf6',
+                    '#6b7280'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // 6-month trend chart
+    const trendData = {{ trend_data | tojson }};
+    const trendCtx = document.getElementById('trend-chart').getContext('2d');
+
+    const datasets = categories.map((category, index) => ({
+        label: category,
+        data: trendData.datasets[category],
+        borderColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6b7280'][index],
+        backgroundColor: 'transparent',
+        tension: 0.1
+    }));
+
+    new Chart(trendCtx, {
+        type: 'line',
+        data: {
+            labels: trendData.labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Individual category charts
+    const categoryStats = {{ category_stats | tojson }};
+
+    categories.forEach(category => {
+        const stats = categoryStats[category];
+        if (!stats) return;
+
+        const chartId = 'chart-' + category.replace(/ /g, '-').replace(/&/g, 'and');
+        const ctx = document.getElementById(chartId).getContext('2d');
+
+        const monthlyData = stats.monthly_data;
+        const months = Object.keys(monthlyData).sort();
+        const values = months.map(m => monthlyData[m]);
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: months,
+                datasets: [{
+                    label: 'Monthly Spending',
+                    data: values,
+                    backgroundColor: '#3b82f6'
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

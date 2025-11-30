@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Budget Planner{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="welcome-header">
+        <h1>Welcome, {{ user['name'] }}! 👋</h1>
+    </div>
+
+    <div class="stats-grid">
+        <!-- Health Score -->
+        <div class="card health-score-card">
+            <h3>Budget Health</h3>
+            <div class="health-score {{ 'excellent' if health_score >= 80 else 'good' if health_score >= 60 else 'warning' if health_score >= 40 else 'danger' }}">
+                <div class="score-number">{{ health_score }}</div>
+                <div class="score-label">/100</div>
+            </div>
+            <div class="health-bar">
+                <div class="health-bar-fill" style="width: {{ health_score }}%"></div>
+            </div>
+            <p class="health-status">
+                {% if health_score >= 80 %}Excellent!{% elif health_score >= 60 %}Good{% elif health_score >= 40 %}Needs Attention{% else %}Danger{% endif %}
+            </p>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="card">
+            <h3>Quick Stats</h3>
+            <div class="stat-item">
+                <span class="stat-label">Spent This Month:</span>
+                <span class="stat-value">${{ "%.2f"|format(total_spent) }}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Budget:</span>
+                <span class="stat-value">${{ "%.2f"|format(user['monthly_budget']) }}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Remaining:</span>
+                <span class="stat-value {{ 'positive' if remaining > 0 else 'negative' }}">${{ "%.2f"|format(remaining) }}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Days Left:</span>
+                <span class="stat-value">{{ days_left }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts & Insights -->
+    <div class="card alerts-card">
+        <h3>Alerts & Insights</h3>
+        {% if insights %}
+            {% for insight in insights %}
+                <div class="alert alert-{{ insight.type }}">
+                    <span class="alert-icon">{{ insight.icon }}</span>
+                    <span class="alert-message">{{ insight.message }}</span>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="no-data">No insights yet. Add some transactions to get started!</p>
+        {% endif %}
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <button onclick="showAddTransaction()" class="btn btn-primary btn-large">
+            ➕ Add Transaction
+        </button>
+    </div>
+</div>
+
+<!-- Add Transaction Modal -->
+<div id="add-transaction-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h2>Add New Transaction</h2>
+
+        <form id="transaction-form" onsubmit="submitTransaction(event)">
+            <div class="form-group">
+                <label for="transaction-date">Date</label>
+                <input type="date" id="transaction-date" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+                <label for="transaction-amount">Amount ($)</label>
+                <input type="number" id="transaction-amount" class="form-control" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label for="transaction-category">Category</label>
+                <select id="transaction-category" class="form-control" required>
+                    <option value="">Select Category</option>
+                    <option value="Food & Groceries">Food & Groceries</option>
+                    <option value="Dining Out">Dining Out</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Transportation">Transportation</option>
+                    <option value="Shopping">Shopping</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="transaction-description">Description (optional)</label>
+                <input type="text" id="transaction-description" class="form-control" placeholder="e.g., Grocery shopping">
+            </div>
+
+            <div class="button-group">
+                <button type="button" onclick="closeModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Transaction</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Set today's date as default
+    document.getElementById('transaction-date').valueAsDate = new Date();
+
+    function showAddTransaction() {
+        document.getElementById('add-transaction-modal').style.display = 'block';
+    }
+
+    function closeModal() {
+        document.getElementById('add-transaction-modal').style.display = 'none';
+    }
+
+    function submitTransaction(event) {
+        event.preventDefault();
+
+        const data = {
+            date: document.getElementById('transaction-date').value,
+            amount: parseFloat(document.getElementById('transaction-amount').value),
+            category: document.getElementById('transaction-category').value,
+            description: document.getElementById('transaction-description').value
+        };
+
+        fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                if (result.is_anomaly) {
+                    alert(`⚠️ Unusual Transaction Detected!\n\nThis transaction is ${Math.abs(result.z_score).toFixed(2)} standard deviations from your average spending in this category.`);
+                }
+                window.location.reload();
+            }
+        });
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+        const modal = document.getElementById('add-transaction-modal');
+        if (event.target == modal) {
+            closeModal();
+        }
+    }
+</script>
+{% endblock %}
