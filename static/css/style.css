@@ -1450,3 +1450,119 @@ body {
 .checkbox-group input[type="checkbox"] {
     cursor: pointer;
 }
+
+/* Assets Page Styles */
+.assets-page h1 {
+    margin-bottom: 1.5rem;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-value-large {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 1rem 0;
+}
+
+.stat-sublabel {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.asset-type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.asset-type-card {
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    text-align: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.asset-type-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.asset-type-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.asset-type-name {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.asset-type-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.asset-type-count {
+    font-size: 0.875rem;
+    color: var(--text-gray);
+    margin-top: 0.25rem;
+}
+
+.asset-type-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background-color: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    text-transform: capitalize;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.card-header h2 {
+    margin: 0;
+}
+
+.asset-name-display {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    padding: 0.5rem 0;
+}
+
+.btn-secondary-small {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    background-color: var(--info);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 0.5rem;
+}
+
+.btn-secondary-small:hover {
+    background-color: #2563eb;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}

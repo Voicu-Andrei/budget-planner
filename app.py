@@ -884,6 +884,110 @@ def income_page():
     return render_template('income.html', total_this_month=total_this_month)
 
 
+@app.route('/api/assets', methods=['GET', 'POST'])
+@login_required
+def assets_api():
+    """API endpoint for assets management"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        data = request.json
+
+        # Parse asset data
+        asset_type = data['asset_type']
+        name = data['name']
+        current_value = float(data['current_value'])
+        purchase_value = float(data.get('purchase_value', 0)) if data.get('purchase_value') else None
+        purchase_date = data.get('purchase_date')
+        quantity = float(data.get('quantity', 1))
+        currency = data.get('currency', 'USD')
+        description = data.get('description', '')
+
+        # Insert asset
+        cursor = db.execute('''
+            INSERT INTO assets (user_id, asset_type, name, current_value, purchase_value, purchase_date, quantity, currency, description, last_updated, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, asset_type, name, current_value, purchase_value, purchase_date, quantity, currency, description, datetime.now(), datetime.now()))
+
+        asset_id = cursor.lastrowid
+
+        # Record initial value in history
+        db.execute('''
+            INSERT INTO asset_history (asset_id, value, recorded_at)
+            VALUES (?, ?, ?)
+        ''', (asset_id, current_value, datetime.now()))
+
+        db.commit()
+
+        return jsonify({'success': True})
+
+    # GET - return all assets for current user
+    assets = db.execute('''
+        SELECT * FROM assets
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+    ''', (user_id,)).fetchall()
+
+    # Calculate total value and gains
+    total_value = sum(a['current_value'] for a in assets)
+    total_invested = sum(a['purchase_value'] or 0 for a in assets)
+    total_gain = total_value - total_invested if total_invested > 0 else 0
+    gain_percentage = (total_gain / total_invested * 100) if total_invested > 0 else 0
+
+    return jsonify({
+        'assets': [dict(a) for a in assets],
+        'summary': {
+            'total_value': total_value,
+            'total_invested': total_invested,
+            'total_gain': total_gain,
+            'gain_percentage': gain_percentage
+        }
+    })
+
+
+@app.route('/api/assets/<int:asset_id>', methods=['PUT', 'DELETE'])
+@login_required
+def asset_operations(asset_id):
+    """Update or delete an asset"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'DELETE':
+        # Only allow deleting your own assets
+        db.execute('DELETE FROM assets WHERE id = ? AND user_id = ?', (asset_id, user_id))
+        db.commit()
+        return jsonify({'success': True})
+
+    elif request.method == 'PUT':
+        data = request.json
+        new_value = float(data['current_value'])
+
+        # Update asset value
+        db.execute('''
+            UPDATE assets
+            SET current_value = ?, last_updated = ?
+            WHERE id = ? AND user_id = ?
+        ''', (new_value, datetime.now(), asset_id, user_id))
+
+        # Record value change in history
+        db.execute('''
+            INSERT INTO asset_history (asset_id, value, recorded_at)
+            VALUES (?, ?, ?)
+        ''', (asset_id, new_value, datetime.now()))
+
+        db.commit()
+
+        return jsonify({'success': True})
+
+
+@app.route('/assets')
+@login_required
+def assets_page():
+    """Assets & investments tracking page"""
+    return render_template('assets.html')
+
+
 @app.route('/api/export/transactions')
 @login_required
 def export_transactions():

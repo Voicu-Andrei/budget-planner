@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+
+{% block title %}Assets & Investments - Budget Planner{% endblock %}
+
+{% block content %}
+<div class="assets-page">
+    <h1>Assets & Investments</h1>
+
+    <!-- Portfolio Summary -->
+    <div class="stats-grid">
+        <div class="card">
+            <h3>Total Portfolio Value</h3>
+            <div class="stat-value-large" id="total-value">$0.00</div>
+        </div>
+        <div class="card">
+            <h3>Total Invested</h3>
+            <div class="stat-value-large" id="total-invested">$0.00</div>
+        </div>
+        <div class="card">
+            <h3>Total Gain/Loss</h3>
+            <div class="stat-value-large" id="total-gain">$0.00</div>
+            <div class="stat-sublabel" id="gain-percentage">0%</div>
+        </div>
+    </div>
+
+    <!-- Asset Type Breakdown -->
+    <div class="card">
+        <h2>Asset Breakdown by Type</h2>
+        <div class="asset-type-grid" id="asset-type-breakdown">
+            <!-- Asset type cards will be inserted here -->
+        </div>
+    </div>
+
+    <!-- Assets Table -->
+    <div class="card">
+        <div class="card-header">
+            <h2>All Assets</h2>
+            <button onclick="showAddAsset()" class="btn btn-primary">Add Asset</button>
+        </div>
+
+        <div class="table-container">
+            <table class="transactions-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                        <th>Purchase Value</th>
+                        <th>Current Value</th>
+                        <th>Gain/Loss</th>
+                        <th>%</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="assets-tbody">
+                    <!-- Assets will be loaded here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Asset Modal -->
+<div id="add-asset-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h2>Add Asset</h2>
+
+        <form id="asset-form" onsubmit="submitAsset(event)">
+            <div class="form-group">
+                <label for="asset-type">Asset Type</label>
+                <select id="asset-type" class="form-control" required>
+                    <option value="">Select Type</option>
+                    <option value="stock">Stock/Equity</option>
+                    <option value="savings">Savings Account</option>
+                    <option value="property">Property/Real Estate</option>
+                    <option value="crypto">Cryptocurrency</option>
+                    <option value="bond">Bond</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="asset-name">Name</label>
+                <input type="text" id="asset-name" class="form-control" placeholder="e.g., Apple Stock, Home, Bitcoin" required>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="asset-quantity">Quantity</label>
+                    <input type="number" id="asset-quantity" class="form-control" value="1" step="0.01" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="asset-currency">Currency</label>
+                    <select id="asset-currency" class="form-control">
+                        <option value="USD" selected>USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                        <option value="JPY">JPY</option>
+                        <option value="CAD">CAD</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="asset-purchase-value">Purchase Value</label>
+                    <input type="number" id="asset-purchase-value" class="form-control" step="0.01" placeholder="Optional">
+                </div>
+
+                <div class="form-group">
+                    <label for="asset-purchase-date">Purchase Date</label>
+                    <input type="date" id="asset-purchase-date" class="form-control">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="asset-current-value">Current Value</label>
+                <input type="number" id="asset-current-value" class="form-control" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label for="asset-description">Description (optional)</label>
+                <textarea id="asset-description" class="form-control" rows="2"></textarea>
+            </div>
+
+            <div class="button-group">
+                <button type="button" onclick="closeModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Asset</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Update Asset Modal -->
+<div id="update-asset-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeUpdateModal()">&times;</span>
+        <h2>Update Asset Value</h2>
+
+        <form id="update-form" onsubmit="submitUpdate(event)">
+            <input type="hidden" id="update-asset-id">
+
+            <div class="form-group">
+                <label>Asset Name</label>
+                <p id="update-asset-name" class="asset-name-display"></p>
+            </div>
+
+            <div class="form-group">
+                <label for="update-current-value">New Current Value</label>
+                <input type="number" id="update-current-value" class="form-control" step="0.01" required>
+            </div>
+
+            <div class="button-group">
+                <button type="button" onclick="closeUpdateModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">Update Value</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let assetsData = [];
+
+    // Load assets on page load
+    loadAssets();
+
+    function loadAssets() {
+        fetch('/api/assets')
+            .then(response => response.json())
+            .then(data => {
+                assetsData = data.assets;
+                updateSummary(data.summary);
+                updateAssetBreakdown();
+                renderAssetsTable();
+            });
+    }
+
+    function updateSummary(summary) {
+        document.getElementById('total-value').textContent = '$' + summary.total_value.toFixed(2);
+        document.getElementById('total-invested').textContent = '$' + summary.total_invested.toFixed(2);
+
+        const gainElement = document.getElementById('total-gain');
+        const percentElement = document.getElementById('gain-percentage');
+
+        gainElement.textContent = '$' + summary.total_gain.toFixed(2);
+        gainElement.className = 'stat-value-large ' + (summary.total_gain >= 0 ? 'stat-positive' : 'stat-negative');
+
+        percentElement.textContent = (summary.total_gain >= 0 ? '+' : '') + summary.gain_percentage.toFixed(2) + '%';
+        percentElement.className = 'stat-sublabel ' + (summary.total_gain >= 0 ? 'stat-positive' : 'stat-negative');
+    }
+
+    function updateAssetBreakdown() {
+        const breakdown = {};
+        const typeNames = {
+            'stock': 'Stocks',
+            'savings': 'Savings',
+            'property': 'Property',
+            'crypto': 'Crypto',
+            'bond': 'Bonds',
+            'other': 'Other'
+        };
+
+        assetsData.forEach(asset => {
+            if (!breakdown[asset.asset_type]) {
+                breakdown[asset.asset_type] = { count: 0, value: 0 };
+            }
+            breakdown[asset.asset_type].count++;
+            breakdown[asset.asset_type].value += asset.current_value;
+        });
+
+        const container = document.getElementById('asset-type-breakdown');
+        container.innerHTML = '';
+
+        for (const [type, data] of Object.entries(breakdown)) {
+            const card = document.createElement('div');
+            card.className = 'asset-type-card';
+            card.innerHTML = `
+                <div class="asset-type-icon">${getAssetIcon(type)}</div>
+                <div class="asset-type-name">${typeNames[type]}</div>
+                <div class="asset-type-value">$${data.value.toFixed(2)}</div>
+                <div class="asset-type-count">${data.count} asset${data.count !== 1 ? 's' : ''}</div>
+            `;
+            container.appendChild(card);
+        }
+
+        if (Object.keys(breakdown).length === 0) {
+            container.innerHTML = '<p class="no-data">No assets added yet</p>';
+        }
+    }
+
+    function getAssetIcon(type) {
+        const icons = {
+            'stock': '📈',
+            'savings': '💰',
+            'property': '🏠',
+            'crypto': '₿',
+            'bond': '📊',
+            'other': '💼'
+        };
+        return icons[type] || '💼';
+    }
+
+    function renderAssetsTable() {
+        const tbody = document.getElementById('assets-tbody');
+        tbody.innerHTML = '';
+
+        if (assetsData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="no-data">No assets found. Add your first asset to start tracking!</td></tr>';
+            return;
+        }
+
+        assetsData.forEach(asset => {
+            const gain = asset.current_value - (asset.purchase_value || asset.current_value);
+            const gainPercent = asset.purchase_value ? ((gain / asset.purchase_value) * 100) : 0;
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><span class="asset-type-badge">${asset.asset_type}</span></td>
+                <td>${asset.name}</td>
+                <td>${asset.quantity}</td>
+                <td>$${(asset.purchase_value || 0).toFixed(2)}</td>
+                <td>$${asset.current_value.toFixed(2)}</td>
+                <td class="${gain >= 0 ? 'stat-positive' : 'stat-negative'}">$${gain.toFixed(2)}</td>
+                <td class="${gainPercent >= 0 ? 'stat-positive' : 'stat-negative'}">${gainPercent >= 0 ? '+' : ''}${gainPercent.toFixed(2)}%</td>
+                <td>
+                    <button onclick="showUpdateAsset(${asset.id}, '${asset.name}', ${asset.current_value})" class="btn btn-secondary-small">Update</button>
+                    <button onclick="deleteAsset(${asset.id})" class="btn btn-danger-small">Delete</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    function showAddAsset() {
+        document.getElementById('add-asset-modal').style.display = 'block';
+    }
+
+    function closeModal() {
+        document.getElementById('add-asset-modal').style.display = 'none';
+    }
+
+    function showUpdateAsset(id, name, currentValue) {
+        document.getElementById('update-asset-id').value = id;
+        document.getElementById('update-asset-name').textContent = name;
+        document.getElementById('update-current-value').value = currentValue;
+        document.getElementById('update-asset-modal').style.display = 'block';
+    }
+
+    function closeUpdateModal() {
+        document.getElementById('update-asset-modal').style.display = 'none';
+    }
+
+    function submitAsset(event) {
+        event.preventDefault();
+
+        const data = {
+            asset_type: document.getElementById('asset-type').value,
+            name: document.getElementById('asset-name').value,
+            quantity: parseFloat(document.getElementById('asset-quantity').value),
+            currency: document.getElementById('asset-currency').value,
+            purchase_value: document.getElementById('asset-purchase-value').value || null,
+            purchase_date: document.getElementById('asset-purchase-date').value || null,
+            current_value: parseFloat(document.getElementById('asset-current-value').value),
+            description: document.getElementById('asset-description').value
+        };
+
+        fetch('/api/assets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                closeModal();
+                document.getElementById('asset-form').reset();
+                loadAssets();
+            }
+        });
+    }
+
+    function submitUpdate(event) {
+        event.preventDefault();
+
+        const assetId = document.getElementById('update-asset-id').value;
+        const currentValue = parseFloat(document.getElementById('update-current-value').value);
+
+        fetch(`/api/assets/${assetId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_value: currentValue })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                closeUpdateModal();
+                loadAssets();
+            }
+        });
+    }
+
+    function deleteAsset(id) {
+        if (confirm('Are you sure you want to delete this asset?')) {
+            fetch(`/api/assets/${id}`, {
+                method: 'DELETE'
+            })
+            .then(() => {
+                loadAssets();
+            });
+        }
+    }
+
+    // Close modals on outside click
+    window.onclick = function(event) {
+        const addModal = document.getElementById('add-asset-modal');
+        const updateModal = document.getElementById('update-asset-modal');
+
+        if (event.target == addModal) {
+            closeModal();
+        } else if (event.target == updateModal) {
+            closeUpdateModal();
+        }
+    }
+</script>
+{% endblock %}

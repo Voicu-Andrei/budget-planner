@@ -111,6 +111,36 @@ def migrate_to_multiuser():
             )
         ''')
 
+        # Create assets table for investment & assets tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                asset_type TEXT NOT NULL CHECK(asset_type IN ('stock', 'savings', 'property', 'crypto', 'bond', 'other')),
+                name TEXT NOT NULL,
+                current_value REAL NOT NULL,
+                purchase_value REAL,
+                purchase_date DATE,
+                quantity REAL DEFAULT 1,
+                currency TEXT DEFAULT 'USD',
+                description TEXT,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+
+        # Create asset_history table for tracking value changes
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                value REAL NOT NULL,
+                recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            )
+        ''')
+
         # Check if users table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
         if cursor.fetchone() is None:
