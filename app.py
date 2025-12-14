@@ -3,12 +3,14 @@ Budget Planner - Main Flask Application
 A personal budget tracking app using discrete mathematics and probability
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file, make_response
 import os
 from datetime import datetime, timedelta
 import secrets
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
+import csv
+import io
 
 # Import our custom modules
 from database import init_db, get_db, migrate_to_multiuser
@@ -265,6 +267,15 @@ def dashboard():
     # Calculate total spent this month
     total_spent = sum(t['amount'] for t in transactions)
 
+    # Get income for current month
+    income_records = db.execute('''
+        SELECT * FROM income
+        WHERE date >= ? AND user_id = ?
+        ORDER BY date DESC
+    ''', (month_start, user_id)).fetchall()
+
+    total_income = sum(i['amount'] for i in income_records)
+
     # Get fixed expenses total
     fixed_expenses = db.execute('SELECT * FROM fixed_expenses WHERE user_id = ?', (user_id,)).fetchall()
     fixed_total = sum(
@@ -274,6 +285,9 @@ def dashboard():
 
     # Calculate remaining budget
     remaining = user['monthly_budget'] - total_spent - fixed_total
+
+    # Calculate net income (income - all expenses)
+    net_income = total_income - total_spent - fixed_total
 
     # Calculate budget percentage (simplified health score)
     budget_percentage = int((remaining / user['monthly_budget'] * 100) if user['monthly_budget'] > 0 else 0)
@@ -319,6 +333,8 @@ def dashboard():
     return render_template('dashboard.html',
                          user=user,
                          total_spent=total_spent,
+                         total_income=total_income,
+                         net_income=net_income,
                          remaining=remaining,
                          days_left=days_left,
                          budget_percentage=budget_percentage,
@@ -764,6 +780,263 @@ def delete_transaction(transaction_id):
     db.execute('DELETE FROM transactions WHERE id = ? AND user_id = ?', (transaction_id, session['user_id']))
     db.commit()
     return jsonify({'success': True})
+
+
+@app.route('/api/income', methods=['GET', 'POST'])
+@login_required
+def income_api():
+    """API endpoint for income management"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        data = request.json
+
+        # Parse income data
+        date = datetime.strptime(data['date'], '%Y-%m-%d')
+        amount = float(data['amount'])
+        source = data['source']
+        description = data.get('description', '')
+        recurring = data.get('recurring', False)
+        frequency = data.get('frequency', 'one-time')
+
+        # Insert income record
+        db.execute('''
+            INSERT INTO income (user_id, date, amount, source, description, recurring, frequency, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, date, amount, source, description, recurring, frequency, datetime.now()))
+        db.commit()
+
+        return jsonify({'success': True})
+
+    # GET - return income records for current user
+    offset = request.args.get('offset', 0, type=int)
+    limit = request.args.get('limit', 50, type=int)
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+
+    query = 'SELECT * FROM income WHERE user_id = ?'
+    params = [user_id]
+
+    if date_from:
+        query += ' AND date >= ?'
+        params.append(date_from)
+
+    if date_to:
+        query += ' AND date <= ?'
+        params.append(date_to)
+
+    query += ' ORDER BY date DESC LIMIT ? OFFSET ?'
+    params.extend([limit, offset])
+
+    income_records = db.execute(query, params).fetchall()
+
+    # Get total count
+    count_query = 'SELECT COUNT(*) as count FROM income WHERE user_id = ?'
+    count_params = [user_id]
+
+    if date_from:
+        count_query += ' AND date >= ?'
+        count_params.append(date_from)
+
+    if date_to:
+        count_query += ' AND date <= ?'
+        count_params.append(date_to)
+
+    total = db.execute(count_query, count_params).fetchone()['count']
+
+    return jsonify({
+        'income': [dict(i) for i in income_records],
+        'total': total,
+        'has_more': offset + limit < total
+    })
+
+
+@app.route('/api/delete-income/<int:income_id>', methods=['DELETE'])
+@login_required
+def delete_income(income_id):
+    """Delete an income record"""
+    db = get_db()
+    # Only allow deleting your own income records
+    db.execute('DELETE FROM income WHERE id = ? AND user_id = ?', (income_id, session['user_id']))
+    db.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/income')
+@login_required
+def income_page():
+    """Income tracking page"""
+    db = get_db()
+    user_id = session['user_id']
+
+    # Get current month income total
+    now = datetime.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    income = db.execute('''
+        SELECT SUM(amount) as total FROM income
+        WHERE date >= ? AND user_id = ?
+    ''', (month_start, user_id)).fetchone()
+
+    total_this_month = income['total'] if income['total'] else 0
+
+    return render_template('income.html', total_this_month=total_this_month)
+
+
+@app.route('/api/export/transactions')
+@login_required
+def export_transactions():
+    """Export transactions to CSV"""
+    db = get_db()
+    user_id = session['user_id']
+
+    # Get all transactions for this user
+    transactions = db.execute('''
+        SELECT date, amount, category, description, is_anomaly, z_score
+        FROM transactions
+        WHERE user_id = ?
+        ORDER BY date DESC
+    ''', (user_id,)).fetchall()
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow(['Date', 'Amount', 'Category', 'Description', 'Is Anomaly', 'Z-Score'])
+
+    # Write data
+    for t in transactions:
+        writer.writerow([
+            t['date'],
+            f"{t['amount']:.2f}",
+            t['category'],
+            t['description'] or '',
+            'Yes' if t['is_anomaly'] else 'No',
+            f"{t['z_score']:.2f}" if t['z_score'] else '0.00'
+        ])
+
+    # Prepare response
+    output.seek(0)
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename=transactions_{datetime.now().strftime("%Y%m%d")}.csv'
+    response.headers['Content-Type'] = 'text/csv'
+
+    return response
+
+
+@app.route('/api/export/income')
+@login_required
+def export_income():
+    """Export income to CSV"""
+    db = get_db()
+    user_id = session['user_id']
+
+    # Get all income records for this user
+    income_records = db.execute('''
+        SELECT date, amount, source, description, recurring, frequency
+        FROM income
+        WHERE user_id = ?
+        ORDER BY date DESC
+    ''', (user_id,)).fetchall()
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow(['Date', 'Amount', 'Source', 'Description', 'Recurring', 'Frequency'])
+
+    # Write data
+    for i in income_records:
+        writer.writerow([
+            i['date'],
+            f"{i['amount']:.2f}",
+            i['source'],
+            i['description'] or '',
+            'Yes' if i['recurring'] else 'No',
+            i['frequency'] or 'one-time'
+        ])
+
+    # Prepare response
+    output.seek(0)
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename=income_{datetime.now().strftime("%Y%m%d")}.csv'
+    response.headers['Content-Type'] = 'text/csv'
+
+    return response
+
+
+@app.route('/api/export/financial-summary')
+@login_required
+def export_financial_summary():
+    """Export comprehensive financial summary to CSV"""
+    db = get_db()
+    user_id = session['user_id']
+
+    # Get monthly summary data
+    months = db.execute('''
+        SELECT
+            strftime('%Y-%m', date) as month,
+            SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as expenses
+        FROM transactions
+        WHERE user_id = ?
+        GROUP BY strftime('%Y-%m', date)
+        ORDER BY month DESC
+    ''', (user_id,)).fetchall()
+
+    income_months = db.execute('''
+        SELECT
+            strftime('%Y-%m', date) as month,
+            SUM(amount) as income
+        FROM income
+        WHERE user_id = ?
+        GROUP BY strftime('%Y-%m', date)
+        ORDER BY month DESC
+    ''', (user_id,)).fetchall()
+
+    # Combine income and expenses by month
+    monthly_data = {}
+    for m in months:
+        monthly_data[m['month']] = {'expenses': m['expenses'], 'income': 0}
+
+    for i in income_months:
+        if i['month'] in monthly_data:
+            monthly_data[i['month']]['income'] = i['income']
+        else:
+            monthly_data[i['month']] = {'expenses': 0, 'income': i['income']}
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow(['Month', 'Income', 'Expenses', 'Net Income', 'Savings Rate %'])
+
+    # Write data
+    for month in sorted(monthly_data.keys(), reverse=True):
+        data = monthly_data[month]
+        income = data['income']
+        expenses = data['expenses']
+        net = income - expenses
+        savings_rate = (net / income * 100) if income > 0 else 0
+
+        writer.writerow([
+            month,
+            f"{income:.2f}",
+            f"{expenses:.2f}",
+            f"{net:.2f}",
+            f"{savings_rate:.1f}"
+        ])
+
+    # Prepare response
+    output.seek(0)
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename=financial_summary_{datetime.now().strftime("%Y%m%d")}.csv'
+    response.headers['Content-Type'] = 'text/csv'
+
+    return response
 
 
 def generate_insights(transactions, user, fixed_total):

@@ -1409,3 +1409,44 @@ body {
         font-size: 1rem;
     }
 }
+
+/* Income Page Styles */
+.income-positive {
+    color: var(--success) !important;
+}
+
+.recurring-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background-color: var(--primary);
+    color: white;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    text-transform: capitalize;
+}
+
+.one-time-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background-color: var(--text-gray);
+    color: white;
+    border-radius: 4px;
+    font-size: 0.75rem;
+}
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+    cursor: pointer;
+}

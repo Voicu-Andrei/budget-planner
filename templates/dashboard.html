@@ -43,17 +43,37 @@
             </div>
         </div>
 
-        <!-- Spending Summary -->
+        <!-- Income & Expenses Summary -->
         <div class="card">
             <h3>This Month</h3>
             <div class="stat-block">
                 <div class="stat-row">
+                    <span class="stat-label">Total Income</span>
+                    <span class="stat-value stat-positive">${{ "%.2f"|format(total_income) }}</span>
+                </div>
+                <div class="stat-row">
                     <span class="stat-label">Total Spent</span>
                     <span class="stat-value stat-spent">${{ "%.2f"|format(total_spent) }}</span>
                 </div>
+                <div class="stat-divider"></div>
+                <div class="stat-row">
+                    <span class="stat-label">Net Income</span>
+                    <span class="stat-value {{ 'stat-positive' if net_income > 0 else 'stat-negative' }}">${{ "%.2f"|format(net_income) }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Budget Remaining -->
+        <div class="card">
+            <h3>Budget Status</h3>
+            <div class="stat-block">
                 <div class="stat-row">
                     <span class="stat-label">Budget</span>
                     <span class="stat-value">${{ "%.2f"|format(user['monthly_budget']) }}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Spent</span>
+                    <span class="stat-value stat-spent">${{ "%.2f"|format(total_spent) }}</span>
                 </div>
                 <div class="stat-divider"></div>
                 <div class="stat-row">

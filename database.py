@@ -95,6 +95,22 @@ def migrate_to_multiuser():
     cursor = db.cursor()
 
     try:
+        # Create income table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS income (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                amount REAL NOT NULL,
+                source TEXT NOT NULL,
+                description TEXT,
+                recurring BOOLEAN DEFAULT 0,
+                frequency TEXT CHECK(frequency IN ('weekly', 'bi-weekly', 'monthly', 'annually', 'one-time')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+
         # Check if users table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
         if cursor.fetchone() is None:
