@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Your Email - Budget Planner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="setup-body">
+    <div class="setup-container">
+        <div class="setup-card" style="text-align: center;">
+            <div style="font-size: 4rem; margin-bottom: 1rem;">✉️</div>
+            <h1>Check Your Email</h1>
+            <p style="color: var(--text-gray); font-size: 1.125rem; line-height: 1.6; margin: 1.5rem 0;">
+                We've sent a verification email to<br>
+                <strong style="color: var(--text-dark);">{{ email }}</strong>
+            </p>
+
+            <p style="color: var(--text-gray); margin: 1.5rem 0;">
+                Click the link in the email to verify your account and get started.
+            </p>
+
+            <div style="background: var(--bg-light); padding: 1.5rem; border-radius: 8px; margin: 2rem 0;">
+                <p style="color: var(--text-gray); font-size: 0.875rem; margin: 0;">
+                    <strong>Didn't receive the email?</strong><br>
+                    Check your spam folder or click below to resend.
+                </p>
+                <button onclick="resendEmail()" class="btn btn-secondary" style="margin-top: 1rem;">
+                    Resend Verification Email
+                </button>
+            </div>
+
+            <a href="{{ url_for('login') }}" style="color: var(--primary); text-decoration: none; font-weight: 500;">
+                ← Back to Login
+            </a>
+        </div>
+    </div>
+
+    <script>
+        function resendEmail() {
+            fetch('/resend-verification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: '{{ email }}' })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert('Verification email sent! Check your inbox.');
+                } else {
+                    alert('Error: ' + (result.error || 'Could not send email'));
+                }
+            });
+        }
+    </script>
+</body>
+</html>

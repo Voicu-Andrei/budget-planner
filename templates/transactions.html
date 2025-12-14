@@ -13,8 +13,8 @@
 
     <!-- Filters -->
     <div class="card filters-card">
-        <div class="filters-grid">
-            <div class="form-group">
+        <div class="filters-row">
+            <div class="filter-group">
                 <label for="category-filter">Category</label>
                 <select id="category-filter" class="form-control" onchange="filterTransactions()">
                     <option value="all">All Categories</option>
@@ -26,8 +26,29 @@
                     <option value="Other">Other</option>
                 </select>
             </div>
-            <div class="form-group">
-                <button onclick="showAddTransaction()" class="btn btn-primary">➕ Add Transaction</button>
+            <div class="filter-group">
+                <label for="search-filter">Search</label>
+                <input type="text" id="search-filter" class="form-control" placeholder="Description..." oninput="filterTransactions()">
+            </div>
+            <div class="filter-group filter-range">
+                <label>Date Range</label>
+                <div class="range-inputs">
+                    <input type="date" id="date-from" class="form-control" onchange="filterTransactions()">
+                    <span class="range-separator">to</span>
+                    <input type="date" id="date-to" class="form-control" onchange="filterTransactions()">
+                </div>
+            </div>
+            <div class="filter-group filter-range">
+                <label>Amount Range</label>
+                <div class="range-inputs">
+                    <input type="number" id="amount-min" class="form-control" placeholder="$0" step="0.01" oninput="filterTransactions()">
+                    <span class="range-separator">to</span>
+                    <input type="number" id="amount-max" class="form-control" placeholder="Any" step="0.01" oninput="filterTransactions()">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button onclick="clearFilters()" class="btn btn-secondary">Clear</button>
+                <button onclick="showAddTransaction()" class="btn btn-primary">Add Transaction</button>
             </div>
         </div>
     </div>
@@ -108,16 +129,36 @@
 <script>
     let currentOffset = 0;
     const limit = 20;
-    let currentCategory = 'all';
+    let currentFilters = {
+        category: 'all',
+        search: '',
+        dateFrom: '',
+        dateTo: '',
+        amountMin: '',
+        amountMax: ''
+    };
 
-    // Set today's date as default
-    document.getElementById('transaction-date').valueAsDate = new Date();
+    // Set today's date as default for transaction form and filter
+    const today = new Date();
+    document.getElementById('transaction-date').valueAsDate = today;
+    document.getElementById('date-to').valueAsDate = today;
 
     // Load initial transactions
     loadTransactions();
 
     function loadTransactions(append = false) {
-        const url = `/api/transactions?offset=${currentOffset}&limit=${limit}&category=${encodeURIComponent(currentCategory)}`;
+        const params = new URLSearchParams({
+            offset: currentOffset,
+            limit: limit,
+            category: currentFilters.category,
+            search: currentFilters.search,
+            date_from: currentFilters.dateFrom,
+            date_to: currentFilters.dateTo,
+            amount_min: currentFilters.amountMin,
+            amount_max: currentFilters.amountMax
+        });
+
+        const url = `/api/transactions?${params.toString()}`;
 
         fetch(url)
             .then(response => response.json())
@@ -128,10 +169,14 @@
                     tbody.innerHTML = '';
                 }
 
-                data.transactions.forEach(t => {
-                    const row = createTransactionRow(t);
-                    tbody.appendChild(row);
-                });
+                if (data.transactions.length === 0 && !append) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="no-data">No transactions found</td></tr>';
+                } else {
+                    data.transactions.forEach(t => {
+                        const row = createTransactionRow(t);
+                        tbody.appendChild(row);
+                    });
+                }
 
                 // Show/hide load more button
                 const loadMoreBtn = document.getElementById('load-more-btn');
@@ -171,7 +216,31 @@
     }
 
     function filterTransactions() {
-        currentCategory = document.getElementById('category-filter').value;
+        currentFilters.category = document.getElementById('category-filter').value;
+        currentFilters.search = document.getElementById('search-filter').value;
+        currentFilters.dateFrom = document.getElementById('date-from').value;
+        currentFilters.dateTo = document.getElementById('date-to').value;
+        currentFilters.amountMin = document.getElementById('amount-min').value;
+        currentFilters.amountMax = document.getElementById('amount-max').value;
+        currentOffset = 0;
+        loadTransactions(false);
+    }
+
+    function clearFilters() {
+        document.getElementById('category-filter').value = 'all';
+        document.getElementById('search-filter').value = '';
+        document.getElementById('date-from').value = '';
+        document.getElementById('date-to').value = '';
+        document.getElementById('amount-min').value = '';
+        document.getElementById('amount-max').value = '';
+        currentFilters = {
+            category: 'all',
+            search: '',
+            dateFrom: '',
+            dateTo: '',
+            amountMin: '',
+            amountMax: ''
+        };
         currentOffset = 0;
         loadTransactions(false);
     }

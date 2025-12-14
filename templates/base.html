@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Budget Planner{% endblock %}</title>
+    <script>
+        // Apply theme immediately to prevent flash
+        (function() {
+            const theme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     {% block extra_head %}{% endblock %}
@@ -12,13 +19,12 @@
     <nav class="navbar">
         <div class="nav-container">
             <div class="nav-brand">
-                <h1>💰 Budget Planner</h1>
+                <h1>Budget Planner{% if session.get('user_name') %}<span class="user-badge">{{ session.get('user_name') }}</span>{% endif %}</h1>
             </div>
             <div class="nav-links">
                 <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
                 <a href="{{ url_for('transactions_page') }}" class="nav-link">Transactions</a>
                 <a href="{{ url_for('analysis') }}" class="nav-link">Analysis</a>
-                <a href="{{ url_for('prediction') }}" class="nav-link">Prediction</a>
                 <a href="{{ url_for('settings') }}" class="nav-link">Settings</a>
             </div>
         </div>

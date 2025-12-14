@@ -8,25 +8,9 @@
 </head>
 <body class="setup-body">
     <div class="setup-container">
-        <!-- Step 1: Name -->
-        <div id="step-name" class="setup-step active">
-            <div class="setup-card">
-                <h1>Welcome to Budget Planner!</h1>
-                <p>Let's get you started on your journey to better financial management.</p>
-
-                <div class="form-group">
-                    <label for="user-name">What's your name?</label>
-                    <input type="text" id="user-name" class="form-control" placeholder="Enter your name">
-                </div>
-
-                <button onclick="nextStep()" class="btn btn-primary">Get Started</button>
-            </div>
-        </div>
-
-        <!-- Step 2: Full Setup -->
-        <div id="step-setup" class="setup-step">
-            <div class="setup-card">
-                <h1>Let's Set You Up!</h1>
+        <div class="setup-card">
+            <h1>Welcome{% if user_name %}, {{ user_name }}{% endif %}!</h1>
+            <p>Let's set up your budget to get started on your financial journey.</p>
 
                 <div class="form-group">
                     <label for="monthly-budget">Monthly Income/Budget</label>
@@ -51,35 +35,15 @@
                     <input type="text" id="savings-purpose" class="form-control" placeholder="Emergency fund, vacation, etc.">
                 </div>
 
-                <div class="button-group">
-                    <button onclick="submitSetup(false)" class="btn btn-primary">Start Fresh</button>
-                    <button onclick="submitSetup(true)" class="btn btn-outline">Load Demo Data</button>
-                </div>
+            <div class="button-group">
+                <button onclick="submitSetup(false)" class="btn btn-primary">Start Fresh</button>
+                <button onclick="submitSetup(true)" class="btn btn-outline">Load Demo Data</button>
             </div>
         </div>
     </div>
 
     <script>
         let expenseCount = 0;
-
-        function nextStep() {
-            const name = document.getElementById('user-name').value.trim();
-            if (!name) {
-                alert('Please enter your name');
-                return;
-            }
-
-            // Save name
-            fetch('/setup', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name })
-            });
-
-            // Show next step
-            document.getElementById('step-name').classList.remove('active');
-            document.getElementById('step-setup').classList.add('active');
-        }
 
         function addExpense() {
             expenseCount++;

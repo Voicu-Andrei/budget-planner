@@ -7,9 +7,11 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 import os
 from datetime import datetime, timedelta
 import secrets
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 # Import our custom modules
-from database import init_db, get_db
+from database import init_db, get_db, migrate_to_multiuser
 from math_engine import (
     calculate_category_stats,
     detect_anomaly,
@@ -18,19 +20,178 @@ from math_engine import (
     get_spending_trends
 )
 from demo_data import generate_demo_data
+from email_utils import send_verification_email, send_welcome_email, generate_verification_token
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
 # Initialize database on first run
 init_db()
+migrate_to_multiuser()
+
+
+def login_required(f):
+    """Decorator to require login for routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """User login"""
+    if request.method == 'POST':
+        data = request.json if request.is_json else request.form
+        email = data.get('email')
+        password = data.get('password')
+
+        db = get_db()
+        user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+
+        if user and check_password_hash(user['password_hash'], password):
+            session['user_id'] = user['id']
+            session['user_name'] = user['name']
+            session['user_email'] = user['email']
+
+            if request.is_json:
+                return jsonify({'success': True})
+            return redirect(url_for('dashboard'))
+        else:
+            if request.is_json:
+                return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+            return render_template('login.html', error='Invalid email or password')
+
+    return render_template('login.html')
+
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    """User signup with email verification"""
+    if request.method == 'POST':
+        data = request.json if request.is_json else request.form
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+
+        db = get_db()
+
+        # Check if user already exists
+        existing_user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        if existing_user:
+            if request.is_json:
+                return jsonify({'success': False, 'error': 'Email already registered'}), 400
+            return render_template('signup.html', error='Email already registered')
+
+        # Generate verification token
+        verification_token = generate_verification_token()
+        token_expiry = datetime.now() + timedelta(hours=24)
+
+        # Create new user (not verified yet)
+        password_hash = generate_password_hash(password)
+        db.execute('''
+            INSERT INTO users (email, password_hash, name, email_verified, verification_token, token_expiry)
+            VALUES (?, ?, ?, 0, ?, ?)
+        ''', (email, password_hash, name, verification_token, token_expiry))
+        db.commit()
+
+        # Send verification email
+        send_verification_email(email, name, verification_token)
+
+        # Return success message
+        if request.is_json:
+            return jsonify({'success': True, 'message': 'Verification email sent!'})
+
+        return render_template('verification_sent.html', email=email)
+
+    return render_template('signup.html')
+
+
+@app.route('/verify-email')
+def verify_email():
+    """Verify user email address"""
+    token = request.args.get('token')
+
+    if not token:
+        return render_template('verification_error.html', error='Invalid verification link')
+
+    db = get_db()
+
+    # Find user with this token
+    user = db.execute('''
+        SELECT * FROM users
+        WHERE verification_token = ? AND token_expiry > ?
+    ''', (token, datetime.now())).fetchone()
+
+    if not user:
+        return render_template('verification_error.html', error='Invalid or expired verification link')
+
+    # Mark email as verified
+    db.execute('''
+        UPDATE users
+        SET email_verified = 1, verification_token = NULL, token_expiry = NULL
+        WHERE id = ?
+    ''', (user['id'],))
+    db.commit()
+
+    # Log the user in
+    session['user_id'] = user['id']
+    session['user_name'] = user['name']
+    session['user_email'] = user['email']
+
+    # Send welcome email
+    send_welcome_email(user['email'], user['name'])
+
+    # Redirect to setup
+    return redirect(url_for('setup'))
+
+
+@app.route('/resend-verification', methods=['POST'])
+def resend_verification():
+    """Resend verification email"""
+    data = request.json
+    email = data.get('email')
+
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE email = ? AND email_verified = 0', (email,)).fetchone()
+
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found or already verified'}), 404
+
+    # Generate new token
+    verification_token = generate_verification_token()
+    token_expiry = datetime.now() + timedelta(hours=24)
+
+    db.execute('''
+        UPDATE users
+        SET verification_token = ?, token_expiry = ?
+        WHERE id = ?
+    ''', (verification_token, token_expiry, user['id']))
+    db.commit()
+
+    # Send email
+    send_verification_email(user['email'], user['name'], verification_token)
+
+    return jsonify({'success': True, 'message': 'Verification email sent!'})
+
+
+@app.route('/logout')
+def logout():
+    """User logout"""
+    session.clear()
+    return redirect(url_for('login'))
 
 
 @app.route('/')
 def index():
     """Home page - redirects to setup or dashboard"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
     db = get_db()
-    user = db.execute('SELECT * FROM user_settings WHERE id = 1').fetchone()
+    user = db.execute('SELECT * FROM user_settings WHERE user_id = ?', (session['user_id'],)).fetchone()
 
     if user is None:
         return redirect(url_for('setup'))
@@ -41,52 +202,51 @@ def index():
 @app.route('/setup', methods=['GET', 'POST'])
 def setup():
     """Initial setup wizard for new users"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
     if request.method == 'POST':
         data = request.json
         db = get_db()
 
-        # Check if this is the name step or full setup
-        if 'name' in data and len(data) == 1:
-            # Just saving the name, continue to next step
-            session['user_name'] = data['name']
-            return jsonify({'success': True})
-
         # Full setup
-        name = session.get('user_name', data.get('name', 'User'))
+        name = session.get('user_name', 'User')
         monthly_budget = float(data.get('monthly_budget', 0))
         savings_goal = float(data.get('savings_goal', 0))
-        savings_purpose = data.get('savings_purpose', '')
+        user_id = session['user_id']
 
         # Insert user settings
         db.execute('''
-            INSERT INTO user_settings (name, monthly_budget, savings_goal, savings_purpose, created_at)
+            INSERT INTO user_settings (user_id, name, monthly_budget, savings_goal, created_at)
             VALUES (?, ?, ?, ?, ?)
-        ''', (name, monthly_budget, savings_goal, savings_purpose, datetime.now()))
+        ''', (user_id, name, monthly_budget, savings_goal, datetime.now()))
 
         # Insert fixed expenses
         fixed_expenses = data.get('fixed_expenses', [])
         for expense in fixed_expenses:
             db.execute('''
-                INSERT INTO fixed_expenses (name, amount, frequency, created_at)
-                VALUES (?, ?, ?, ?)
-            ''', (expense['name'], float(expense['amount']), expense['frequency'], datetime.now()))
+                INSERT INTO fixed_expenses (user_id, name, amount, frequency, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (user_id, expense['name'], float(expense['amount']), expense['frequency'], datetime.now()))
 
         db.commit()
 
         # Generate demo data if requested
         if data.get('load_demo', False):
-            generate_demo_data()
+            generate_demo_data(user_id)
 
         return jsonify({'success': True})
 
-    return render_template('setup.html')
+    return render_template('setup.html', user_name=session.get('user_name', 'User'))
 
 
 @app.route('/dashboard')
+@login_required
 def dashboard():
     """Main dashboard page"""
     db = get_db()
-    user = db.execute('SELECT * FROM user_settings WHERE id = 1').fetchone()
+    user_id = session['user_id']
+    user = db.execute('SELECT * FROM user_settings WHERE user_id = ?', (user_id,)).fetchone()
 
     if user is None:
         return redirect(url_for('setup'))
@@ -98,15 +258,15 @@ def dashboard():
     # Get transactions for current month
     transactions = db.execute('''
         SELECT * FROM transactions
-        WHERE date >= ?
+        WHERE date >= ? AND user_id = ?
         ORDER BY date DESC
-    ''', (month_start,)).fetchall()
+    ''', (month_start, user_id)).fetchall()
 
     # Calculate total spent this month
     total_spent = sum(t['amount'] for t in transactions)
 
     # Get fixed expenses total
-    fixed_expenses = db.execute('SELECT * FROM fixed_expenses').fetchall()
+    fixed_expenses = db.execute('SELECT * FROM fixed_expenses WHERE user_id = ?', (user_id,)).fetchall()
     fixed_total = sum(
         e['amount'] if e['frequency'] == 'monthly' else e['amount'] * 4.33
         for e in fixed_expenses
@@ -115,39 +275,65 @@ def dashboard():
     # Calculate remaining budget
     remaining = user['monthly_budget'] - total_spent - fixed_total
 
+    # Calculate budget percentage (simplified health score)
+    budget_percentage = int((remaining / user['monthly_budget'] * 100) if user['monthly_budget'] > 0 else 0)
+    budget_percentage = max(0, budget_percentage)  # Don't show negative
+
+    # Calculate projected savings
+    projected_savings = max(0, remaining)
+
+    # Calculate savings percentage for progress bar
+    savings_percentage = min(100, int((projected_savings / user['savings_goal'] * 100) if user['savings_goal'] > 0 else 0))
+
     # Days left in month
     next_month = (month_start + timedelta(days=32)).replace(day=1)
     days_left = (next_month - now).days
 
-    # Get anomalies
-    anomalies = [t for t in transactions if t['is_anomaly']]
+    # Generate category data for chart
+    category_totals = {}
+    for t in transactions:
+        category_totals[t['category']] = category_totals.get(t['category'], 0) + t['amount']
 
-    # Calculate health score
-    health_score = calculate_health_score(
-        total_spent,
-        user['monthly_budget'],
-        fixed_total,
-        user['savings_goal'],
-        len(anomalies)
-    )
+    category_data = {
+        'labels': list(category_totals.keys()),
+        'values': list(category_totals.values())
+    }
 
-    # Get insights
-    insights = generate_insights(transactions, user, fixed_total)
+    # Generate daily trend data
+    daily_totals = {}
+    for t in transactions:
+        try:
+            date = datetime.strptime(t['date'], '%Y-%m-%d %H:%M:%S.%f')
+        except ValueError:
+            date = datetime.strptime(t['date'], '%Y-%m-%d %H:%M:%S')
+        date_key = date.strftime('%m/%d')
+        daily_totals[date_key] = daily_totals.get(date_key, 0) + t['amount']
+
+    # Sort by date
+    sorted_dates = sorted(daily_totals.keys(), key=lambda x: datetime.strptime(x, '%m/%d').replace(year=now.year))
+    trend_data = {
+        'labels': sorted_dates,
+        'values': [daily_totals[d] for d in sorted_dates]
+    }
 
     return render_template('dashboard.html',
                          user=user,
                          total_spent=total_spent,
                          remaining=remaining,
                          days_left=days_left,
-                         health_score=health_score,
-                         anomalies=anomalies,
-                         insights=insights)
+                         budget_percentage=budget_percentage,
+                         projected_savings=projected_savings,
+                         savings_percentage=savings_percentage,
+                         category_data=category_data,
+                         trend_data=trend_data)
 
 
 @app.route('/api/transactions', methods=['GET', 'POST'])
+@login_required
 def transactions_api():
     """API endpoint for transaction management"""
     db = get_db()
+    user_id = session['user_id']
 
     if request.method == 'POST':
         data = request.json
@@ -161,11 +347,11 @@ def transactions_api():
         # Check for anomaly
         is_anomaly, z_score = detect_anomaly(category, amount)
 
-        # Insert transaction
+        # Insert transaction with user_id
         db.execute('''
-            INSERT INTO transactions (date, amount, category, description, is_anomaly, z_score, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (date, amount, category, description, is_anomaly, z_score, datetime.now()))
+            INSERT INTO transactions (user_id, date, amount, category, description, is_anomaly, z_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, date, amount, category, description, is_anomaly, z_score, datetime.now()))
         db.commit()
 
         return jsonify({
@@ -174,30 +360,55 @@ def transactions_api():
             'z_score': z_score
         })
 
-    # GET - return transactions
+    # GET - return transactions for current user
     offset = request.args.get('offset', 0, type=int)
     limit = request.args.get('limit', 20, type=int)
     category = request.args.get('category', None)
+    search = request.args.get('search', '')
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    amount_min = request.args.get('amount_min', '')
+    amount_max = request.args.get('amount_max', '')
 
     query = 'SELECT * FROM transactions'
     params = []
+    conditions = ['user_id = ?']
+    params.append(user_id)
 
     if category and category != 'all':
-        query += ' WHERE category = ?'
+        conditions.append('category = ?')
         params.append(category)
 
+    if search:
+        conditions.append('description LIKE ?')
+        params.append(f'%{search}%')
+
+    if date_from:
+        conditions.append('date >= ?')
+        params.append(date_from)
+
+    if date_to:
+        conditions.append('date <= ?')
+        params.append(date_to)
+
+    if amount_min:
+        conditions.append('amount >= ?')
+        params.append(float(amount_min))
+
+    if amount_max:
+        conditions.append('amount <= ?')
+        params.append(float(amount_max))
+
+    query += ' WHERE ' + ' AND '.join(conditions)
     query += ' ORDER BY date DESC LIMIT ? OFFSET ?'
     params.extend([limit, offset])
 
     transactions = db.execute(query, params).fetchall()
 
-    # Get total count
-    count_query = 'SELECT COUNT(*) as count FROM transactions'
-    if category and category != 'all':
-        count_query += ' WHERE category = ?'
-        total = db.execute(count_query, [category] if category and category != 'all' else []).fetchone()['count']
-    else:
-        total = db.execute(count_query).fetchone()['count']
+    # Get total count for current user
+    count_query = 'SELECT COUNT(*) as count FROM transactions WHERE ' + ' AND '.join(conditions)
+    # Use the same params but without limit and offset
+    total = db.execute(count_query, params[:-2]).fetchone()['count']
 
     return jsonify({
         'transactions': [dict(t) for t in transactions],
@@ -207,18 +418,20 @@ def transactions_api():
 
 
 @app.route('/transactions')
+@login_required
 def transactions_page():
     """View all transactions page"""
     db = get_db()
+    user_id = session['user_id']
 
-    # Get current month total
+    # Get current month total for this user
     now = datetime.now()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     transactions = db.execute('''
         SELECT SUM(amount) as total FROM transactions
-        WHERE date >= ?
-    ''', (month_start,)).fetchone()
+        WHERE date >= ? AND user_id = ?
+    ''', (month_start, user_id)).fetchone()
 
     total_this_month = transactions['total'] if transactions['total'] else 0
 
@@ -226,15 +439,17 @@ def transactions_page():
 
 
 @app.route('/analysis')
+@login_required
 def analysis():
     """Spending analysis page with charts and statistics"""
     db = get_db()
+    user_id = session['user_id']
 
     categories = ['Food & Groceries', 'Dining Out', 'Entertainment', 'Transportation', 'Shopping', 'Other']
     category_stats = {}
 
     for category in categories:
-        stats = calculate_category_stats(category)
+        stats = calculate_category_stats(category, user_id=user_id)
         category_stats[category] = stats
 
     # Get current month breakdown for pie chart
@@ -244,26 +459,232 @@ def analysis():
     current_month = db.execute('''
         SELECT category, SUM(amount) as total
         FROM transactions
-        WHERE date >= ?
+        WHERE date >= ? AND user_id = ?
         GROUP BY category
-    ''', (month_start,)).fetchall()
+    ''', (month_start, user_id)).fetchall()
 
     current_month_data = {row['category']: row['total'] for row in current_month}
 
     # Get 6-month trend data
-    trend_data = get_spending_trends(months=6)
+    trend_data = get_spending_trends(months=6, user_id=user_id)
+
+    # Get heatmap data (last 90 days)
+    ninety_days_ago = now - timedelta(days=90)
+    daily_spending = db.execute('''
+        SELECT date, SUM(amount) as total
+        FROM transactions
+        WHERE date >= ? AND user_id = ?
+        GROUP BY date
+        ORDER BY date
+    ''', (ninety_days_ago, user_id)).fetchall()
+
+    heatmap_data = [{'date': row['date'], 'amount': row['total']} for row in daily_spending]
+
+    # Get velocity data (current month daily cumulative)
+    velocity_data = db.execute('''
+        SELECT date, amount
+        FROM transactions
+        WHERE date >= ? AND user_id = ?
+        ORDER BY date
+    ''', (month_start, user_id)).fetchall()
+
+    cumulative_spending = []
+    total = 0
+    for row in velocity_data:
+        total += row['amount']
+        cumulative_spending.append({
+            'date': row['date'],
+            'cumulative': total
+        })
 
     return render_template('analysis.html',
                          category_stats=category_stats,
                          current_month_data=current_month_data,
                          trend_data=trend_data,
-                         categories=categories)
+                         categories=categories,
+                         heatmap_data=heatmap_data,
+                         velocity_data=cumulative_spending)
 
 
 @app.route('/prediction')
 def prediction():
     """Monte Carlo prediction page"""
     return render_template('prediction.html')
+
+
+@app.route('/comparisons')
+def comparisons():
+    """Comparison views page - month-over-month and year-over-year"""
+    db = get_db()
+
+    # Get month-over-month data (last 6 months)
+    month_over_month = []
+    for i in range(6, 0, -1):
+        month_date = datetime.now() - timedelta(days=i*30)
+        month_start = month_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        next_month = (month_start + timedelta(days=32)).replace(day=1)
+
+        total = db.execute('''
+            SELECT SUM(amount) as total FROM transactions
+            WHERE date >= ? AND date < ?
+        ''', (month_start, next_month)).fetchone()['total'] or 0
+
+        month_over_month.append({
+            'month': month_start.strftime('%B %Y'),
+            'total': total
+        })
+
+    # Get current month
+    now = datetime.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    next_month = (month_start + timedelta(days=32)).replace(day=1)
+    current_month_total = db.execute('''
+        SELECT SUM(amount) as total FROM transactions
+        WHERE date >= ? AND date < ?
+    ''', (month_start, next_month)).fetchone()['total'] or 0
+
+    month_over_month.append({
+        'month': month_start.strftime('%B %Y'),
+        'total': current_month_total
+    })
+
+    # Get category breakdown for last 3 months
+    category_comparison = []
+    categories = ['Food & Groceries', 'Dining Out', 'Entertainment', 'Transportation', 'Shopping', 'Other']
+
+    for i in range(2, -1, -1):
+        month_date = datetime.now() - timedelta(days=i*30)
+        month_start = month_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        next_month = (month_start + timedelta(days=32)).replace(day=1)
+
+        category_data = {
+            'month': month_start.strftime('%B %Y'),
+            'categories': {}
+        }
+
+        for category in categories:
+            total = db.execute('''
+                SELECT SUM(amount) as total FROM transactions
+                WHERE date >= ? AND date < ? AND category = ?
+            ''', (month_start, next_month, category)).fetchone()['total'] or 0
+            category_data['categories'][category] = total
+
+        category_comparison.append(category_data)
+
+    # Year-over-year comparison (same month last year vs this year)
+    year_over_year = []
+    current_year = now.year
+
+    for month_num in range(1, 13):
+        # This year
+        this_year_start = datetime(current_year, month_num, 1)
+        this_year_end = (this_year_start + timedelta(days=32)).replace(day=1)
+        this_year_total = db.execute('''
+            SELECT SUM(amount) as total FROM transactions
+            WHERE date >= ? AND date < ?
+        ''', (this_year_start, this_year_end)).fetchone()['total'] or 0
+
+        # Last year
+        last_year_start = datetime(current_year - 1, month_num, 1)
+        last_year_end = (last_year_start + timedelta(days=32)).replace(day=1)
+        last_year_total = db.execute('''
+            SELECT SUM(amount) as total FROM transactions
+            WHERE date >= ? AND date < ?
+        ''', (last_year_start, last_year_end)).fetchone()['total'] or 0
+
+        year_over_year.append({
+            'month': this_year_start.strftime('%B'),
+            'this_year': this_year_total,
+            'last_year': last_year_total
+        })
+
+    return render_template('comparisons.html',
+                         month_over_month=month_over_month,
+                         category_comparison=category_comparison,
+                         year_over_year=year_over_year,
+                         current_year=current_year)
+
+
+@app.route('/api/comparison-data')
+@login_required
+def comparison_data():
+    """Get month-over-month comparison data"""
+    db = get_db()
+    user_id = session['user_id']
+    month_over_month = []
+
+    for i in range(6, -1, -1):
+        month_date = datetime.now() - timedelta(days=i*30)
+        month_start = month_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        next_month = (month_start + timedelta(days=32)).replace(day=1)
+
+        total = db.execute('''
+            SELECT SUM(amount) as total FROM transactions
+            WHERE date >= ? AND date < ? AND user_id = ?
+        ''', (month_start, next_month, user_id)).fetchone()['total'] or 0
+
+        month_over_month.append({
+            'month': month_start.strftime('%b %Y'),
+            'total': total
+        })
+
+    return jsonify(month_over_month)
+
+
+@app.route('/api/update-account', methods=['POST'])
+def update_account():
+    """Update user account information"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+
+    data = request.json
+    name = data.get('name')
+    email = data.get('email')
+
+    db = get_db()
+
+    # Check if email is already taken by another user
+    existing = db.execute('SELECT * FROM users WHERE email = ? AND id != ?',
+                         (email, session['user_id'])).fetchone()
+    if existing:
+        return jsonify({'success': False, 'error': 'Email already in use'})
+
+    # Update user
+    db.execute('UPDATE users SET name = ?, email = ? WHERE id = ?',
+              (name, email, session['user_id']))
+    db.commit()
+
+    # Update session
+    session['user_name'] = name
+    session['user_email'] = email
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/change-password', methods=['POST'])
+def change_password():
+    """Change user password"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+
+    data = request.json
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+
+    # Verify current password
+    if not check_password_hash(user['password_hash'], current_password):
+        return jsonify({'success': False, 'error': 'Current password is incorrect'})
+
+    # Update password
+    new_hash = generate_password_hash(new_password)
+    db.execute('UPDATE users SET password_hash = ? WHERE id = ?',
+              (new_hash, session['user_id']))
+    db.commit()
+
+    return jsonify({'success': True})
 
 
 @app.route('/api/run-simulation', methods=['POST'])
@@ -278,6 +699,7 @@ def run_simulation():
 
 
 @app.route('/settings', methods=['GET', 'POST'])
+@login_required
 def settings():
     """Settings page"""
     db = get_db()
@@ -290,16 +712,16 @@ def settings():
             db.execute('''
                 UPDATE user_settings
                 SET name = ?, monthly_budget = ?, savings_goal = ?
-                WHERE id = 1
-            ''', (data['name'], float(data['monthly_budget']), float(data['savings_goal'])))
+                WHERE user_id = ?
+            ''', (data['name'], float(data['monthly_budget']), float(data['savings_goal']), session['user_id']))
             db.commit()
             return jsonify({'success': True})
 
         elif action == 'add_expense':
             db.execute('''
-                INSERT INTO fixed_expenses (name, amount, frequency, created_at)
-                VALUES (?, ?, ?, ?)
-            ''', (data['name'], float(data['amount']), data['frequency'], datetime.now()))
+                INSERT INTO fixed_expenses (user_id, name, amount, frequency, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (session['user_id'], data['name'], float(data['amount']), data['frequency'], datetime.now()))
             db.commit()
             return jsonify({'success': True})
 
@@ -309,17 +731,18 @@ def settings():
             return jsonify({'success': True})
 
         elif action == 'load_demo':
-            generate_demo_data()
+            generate_demo_data(session['user_id'])
             return jsonify({'success': True})
 
         elif action == 'clear_all':
-            db.execute('DELETE FROM transactions')
+            db.execute('DELETE FROM transactions WHERE user_id = ?', (session['user_id'],))
             db.commit()
             return jsonify({'success': True})
 
     # GET request
-    user = db.execute('SELECT * FROM user_settings WHERE id = 1').fetchone()
-    fixed_expenses = db.execute('SELECT * FROM fixed_expenses ORDER BY amount DESC').fetchall()
+    user_id = session['user_id']
+    user = db.execute('SELECT * FROM user_settings WHERE user_id = ?', (user_id,)).fetchone()
+    fixed_expenses = db.execute('SELECT * FROM fixed_expenses WHERE user_id = ? ORDER BY amount DESC', (user_id,)).fetchall()
 
     fixed_total = sum(
         e['amount'] if e['frequency'] == 'monthly' else e['amount'] * 4.33
@@ -333,10 +756,12 @@ def settings():
 
 
 @app.route('/api/delete-transaction/<int:transaction_id>', methods=['DELETE'])
+@login_required
 def delete_transaction(transaction_id):
     """Delete a transaction"""
     db = get_db()
-    db.execute('DELETE FROM transactions WHERE id = ?', (transaction_id,))
+    # Only allow deleting your own transactions
+    db.execute('DELETE FROM transactions WHERE id = ? AND user_id = ?', (transaction_id, session['user_id']))
     db.commit()
     return jsonify({'success': True})
 

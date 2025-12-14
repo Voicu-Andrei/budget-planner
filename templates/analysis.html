@@ -6,108 +6,183 @@
 <div class="analysis-page">
     <h1>Spending Analysis</h1>
 
-    <!-- Overview Charts -->
-    <div class="charts-grid">
-        <div class="card">
-            <h3>Current Month Breakdown</h3>
-            <canvas id="pie-chart"></canvas>
-        </div>
+    <!-- Tab Switcher -->
+    <div class="tab-switcher">
+        <button class="tab-button active" onclick="switchTab('current')">Current Month</button>
+        <button class="tab-button" onclick="switchTab('trends')">6-Month Trends</button>
+        <button class="tab-button" onclick="switchTab('comparisons')">Comparisons</button>
+        <button class="tab-button" onclick="switchTab('prediction')">Prediction</button>
+    </div>
 
-        <div class="card">
-            <h3>Last 6 Months Trend</h3>
-            <canvas id="trend-chart"></canvas>
+    <!-- Current Month Tab -->
+    <div id="current-tab" class="tab-content active">
+        <div class="card chart-card">
+            <h2>This Month's Spending</h2>
+            <div class="chart-container-large">
+                <canvas id="pie-chart"></canvas>
+            </div>
         </div>
     </div>
 
-    <!-- Category Breakdown -->
-    <h2>Category Breakdown</h2>
-
-    {% for category in categories %}
-        {% set stats = category_stats.get(category) %}
-        <div class="card category-card">
-            <h3>{{ category }}</h3>
-
-            {% if stats %}
-                <div class="category-stats-grid">
-                    <div class="stat-box">
-                        <div class="stat-label">Average per Month</div>
-                        <div class="stat-value">${{ "%.2f"|format(stats.mean) }}</div>
-                    </div>
-
-                    <div class="stat-box">
-                        <div class="stat-label">Range</div>
-                        <div class="stat-value">${{ "%.2f"|format(stats.min) }} - ${{ "%.2f"|format(stats.max) }}</div>
-                    </div>
-
-                    <div class="stat-box">
-                        <div class="stat-label">Standard Deviation</div>
-                        <div class="stat-value">±${{ "%.2f"|format(stats.std_dev) }}</div>
-                    </div>
-
-                    <div class="stat-box">
-                        <div class="stat-label">Transactions</div>
-                        <div class="stat-value">{{ stats.count }}</div>
-                    </div>
-                </div>
-
-                <div class="mini-chart-container">
-                    <canvas id="chart-{{ category|replace(' ', '-')|replace('&', 'and') }}"></canvas>
-                </div>
-            {% else %}
-                <p class="no-data">No transactions in this category yet.</p>
-            {% endif %}
+    <!-- Trends Tab -->
+    <div id="trends-tab" class="tab-content">
+        <div class="card chart-card">
+            <h2>Last 6 Months</h2>
+            <div class="chart-container-large">
+                <canvas id="trend-chart"></canvas>
+            </div>
         </div>
-    {% endfor %}
-</div>
+    </div>
 
+    <!-- Comparisons Tab -->
+    <div id="comparisons-tab" class="tab-content">
+        <div class="card chart-card">
+            <h2>Month-over-Month Comparison</h2>
+            <div class="chart-container-large">
+                <canvas id="comparison-chart"></canvas>
+            </div>
+            <div class="stats-row">
+                <div class="stat-item-simple">
+                    <div class="stat-label">Average</div>
+                    <div class="stat-value" id="avg-monthly">$0</div>
+                </div>
+                <div class="stat-item-simple">
+                    <div class="stat-label">Highest</div>
+                    <div class="stat-value" id="highest-month">-</div>
+                </div>
+                <div class="stat-item-simple">
+                    <div class="stat-label">Lowest</div>
+                    <div class="stat-value" id="lowest-month">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prediction Tab -->
+    <div id="prediction-tab" class="tab-content">
+        <div class="card chart-card">
+            <h2>Next Month Prediction</h2>
+            <p class="description">Monte Carlo simulation with 1,000 scenarios based on your spending patterns</p>
+
+            <button id="run-simulation-btn" onclick="runSimulation()" class="btn btn-primary btn-large">
+                Run Prediction
+            </button>
+
+            <div id="simulation-loading" class="loading-container" style="display: none;">
+                <div class="loading-spinner"></div>
+                <p>Running 1,000 simulations...</p>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <div id="results-container" style="display: none;">
+                <div class="chart-container-large">
+                    <canvas id="histogram-chart"></canvas>
+                </div>
+
+                <div class="prediction-stats">
+                    <div class="prediction-stat success">
+                        <div class="prediction-value" id="prob-positive">-</div>
+                        <div class="prediction-label">Positive Balance</div>
+                    </div>
+                    <div class="prediction-stat warning">
+                        <div class="prediction-value" id="prob-overbudget">-</div>
+                        <div class="prediction-label">Over Budget</div>
+                    </div>
+                    <div class="prediction-stat info">
+                        <div class="prediction-value" id="prob-savings">-</div>
+                        <div class="prediction-label">Meet Savings</div>
+                    </div>
+                </div>
+
+                <div class="scenario-stats">
+                    <div class="scenario-item">
+                        <div class="scenario-label">Best Case</div>
+                        <div class="scenario-value" id="best-case">-</div>
+                    </div>
+                    <div class="scenario-item">
+                        <div class="scenario-label">Likely Range</div>
+                        <div class="scenario-value" id="likely-case">-</div>
+                    </div>
+                    <div class="scenario-item">
+                        <div class="scenario-label">Worst Case</div>
+                        <div class="scenario-value" id="worst-case">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-    // Current month pie chart
+    let histogramChart = null;
+
+    // Tab switching
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.getElementById(tabName + '-tab').classList.add('active');
+        event.target.classList.add('active');
+    }
+
+    // Data from backend
     const pieData = {{ current_month_data | tojson }};
+    const trendData = {{ trend_data | tojson }};
     const categories = {{ categories | tojson }};
 
-    const pieCtx = document.getElementById('pie-chart').getContext('2d');
-    new Chart(pieCtx, {
-        type: 'pie',
+    // Current Month Pie Chart
+    new Chart(document.getElementById('pie-chart'), {
+        type: 'doughnut',
         data: {
             labels: Object.keys(pieData),
             datasets: [{
                 data: Object.values(pieData),
-                backgroundColor: [
-                    '#3b82f6',
-                    '#10b981',
-                    '#f59e0b',
-                    '#ef4444',
-                    '#8b5cf6',
-                    '#6b7280'
-                ]
+                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6b7280'],
+                borderWidth: 0
             }]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: { padding: 20, font: { size: 13 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = '$' + context.parsed.toFixed(2);
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((context.parsed / total) * 100).toFixed(1);
+                            return label + ': ' + value + ' (' + percentage + '%)';
+                        }
+                    }
                 }
             }
         }
     });
 
-    // 6-month trend chart
-    const trendData = {{ trend_data | tojson }};
-    const trendCtx = document.getElementById('trend-chart').getContext('2d');
-
+    // 6-Month Trend Chart
     const datasets = categories.map((category, index) => ({
         label: category,
         data: trendData.datasets[category],
         borderColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6b7280'][index],
         backgroundColor: 'transparent',
-        tension: 0.1
+        tension: 0.4,
+        borderWidth: 3,
+        pointRadius: 4
     }));
 
-    new Chart(trendCtx, {
+    new Chart(document.getElementById('trend-chart'), {
         type: 'line',
         data: {
             labels: trendData.labels,
@@ -115,67 +190,143 @@
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: { padding: 20, font: { size: 12 }, usePointStyle: true }
                 }
             },
             scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: {
-                        callback: function(value) {
-                            return '$' + value;
-                        }
-                    }
+                    ticks: { callback: function(value) { return '$' + value; } }
                 }
             }
         }
     });
 
-    // Individual category charts
-    const categoryStats = {{ category_stats | tojson }};
+    // Month-over-Month Comparison
+    fetch('/api/comparison-data')
+        .then(response => response.json())
+        .then(data => {
+            const momLabels = data.map(d => d.month);
+            const momValues = data.map(d => d.total);
 
-    categories.forEach(category => {
-        const stats = categoryStats[category];
-        if (!stats) return;
+            new Chart(document.getElementById('comparison-chart'), {
+                type: 'bar',
+                data: {
+                    labels: momLabels,
+                    datasets: [{
+                        label: 'Monthly Spending',
+                        data: momValues,
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: function(value) { return '$' + value.toFixed(0); } }
+                        }
+                    }
+                }
+            });
 
-        const chartId = 'chart-' + category.replace(/ /g, '-').replace(/&/g, 'and');
-        const ctx = document.getElementById(chartId).getContext('2d');
+            const avg = momValues.reduce((a, b) => a + b, 0) / momValues.length;
+            const max = Math.max(...momValues);
+            const min = Math.min(...momValues);
+            const maxIdx = momValues.indexOf(max);
+            const minIdx = momValues.indexOf(min);
 
-        const monthlyData = stats.monthly_data;
-        const months = Object.keys(monthlyData).sort();
-        const values = months.map(m => monthlyData[m]);
+            document.getElementById('avg-monthly').textContent = '$' + avg.toFixed(2);
+            document.getElementById('highest-month').textContent = momLabels[maxIdx] + ' ($' + max.toFixed(2) + ')';
+            document.getElementById('lowest-month').textContent = momLabels[minIdx] + ' ($' + min.toFixed(2) + ')';
+        });
 
-        new Chart(ctx, {
+    // Prediction Functions
+    function runSimulation() {
+        document.getElementById('run-simulation-btn').style.display = 'none';
+        document.getElementById('simulation-loading').style.display = 'block';
+
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += 10;
+            document.getElementById('progress-fill').style.width = progress + '%';
+            if (progress >= 100) clearInterval(progressInterval);
+        }, 100);
+
+        fetch('/api/run-simulation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        })
+        .then(response => response.json())
+        .then(data => {
+            displayResults(data);
+            document.getElementById('simulation-loading').style.display = 'none';
+            document.getElementById('results-container').style.display = 'block';
+        });
+    }
+
+    function displayResults(data) {
+        document.getElementById('prob-positive').textContent = data.probabilities.positive_balance.toFixed(1) + '%';
+        document.getElementById('prob-overbudget').textContent = data.probabilities.over_budget.toFixed(1) + '%';
+        document.getElementById('prob-savings').textContent = data.probabilities.meet_savings_goal.toFixed(1) + '%';
+
+        document.getElementById('best-case').textContent = '$' + data.percentiles.p90.toFixed(2);
+        document.getElementById('likely-case').textContent =
+            '$' + data.percentiles.p25.toFixed(2) + ' - $' + data.percentiles.p75.toFixed(2);
+        document.getElementById('worst-case').textContent = '$' + data.percentiles.p10.toFixed(2);
+
+        const ctx = document.getElementById('histogram-chart').getContext('2d');
+        if (histogramChart) histogramChart.destroy();
+
+        const bins = data.histogram.bins;
+        const labels = bins.slice(0, -1).map((b, i) => '$' + b.toFixed(0) + '-$' + bins[i+1].toFixed(0));
+        const colors = bins.slice(0, -1).map(b => {
+            if (b < 0) return '#ef4444';
+            if (b < data.savings_goal) return '#f59e0b';
+            return '#10b981';
+        });
+
+        histogramChart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: months,
+                labels: labels,
                 datasets: [{
-                    label: 'Monthly Spending',
-                    data: values,
-                    backgroundColor: '#3b82f6'
+                    label: 'Simulations',
+                    data: data.histogram.counts,
+                    backgroundColor: colors,
+                    borderRadius: 4
                 }]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        display: false
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) { return 'Simulations: ' + context.parsed.y; }
+                        }
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return '$' + value;
-                            }
-                        }
+                        title: { display: true, text: 'Number of Simulations' }
+                    },
+                    x: {
+                        title: { display: true, text: 'Ending Balance' }
                     }
                 }
             }
         });
-    });
+    }
 </script>
 {% endblock %}

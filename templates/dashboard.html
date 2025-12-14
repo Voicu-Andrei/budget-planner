@@ -4,67 +4,109 @@
 
 {% block content %}
 <div class="dashboard">
-    <div class="welcome-header">
-        <h1>Welcome, {{ user['name'] }}! 👋</h1>
+    <!-- Hero Section -->
+    <div class="dashboard-hero">
+        <div class="hero-content">
+            <h1>Welcome back, {{ user['name'] }}</h1>
+            <p class="hero-subtitle">Here's your financial overview for this month</p>
+        </div>
     </div>
 
-    <div class="stats-grid">
-        <!-- Health Score -->
-        <div class="card health-score-card">
+    <!-- Main Stats Grid -->
+    <div class="stats-grid-large">
+        <!-- Budget Health - Large Card -->
+        <div class="card card-highlight health-card">
             <h3>Budget Health</h3>
-            <div class="health-score {{ 'excellent' if health_score >= 80 else 'good' if health_score >= 60 else 'warning' if health_score >= 40 else 'danger' }}">
-                <div class="score-number">{{ health_score }}</div>
-                <div class="score-label">/100</div>
-            </div>
-            <div class="health-bar">
-                <div class="health-bar-fill" style="width: {{ health_score }}%"></div>
-            </div>
-            <p class="health-status">
-                {% if health_score >= 80 %}Excellent!{% elif health_score >= 60 %}Good{% elif health_score >= 40 %}Needs Attention{% else %}Danger{% endif %}
-            </p>
-        </div>
-
-        <!-- Quick Stats -->
-        <div class="card">
-            <h3>Quick Stats</h3>
-            <div class="stat-item">
-                <span class="stat-label">Spent This Month:</span>
-                <span class="stat-value">${{ "%.2f"|format(total_spent) }}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Budget:</span>
-                <span class="stat-value">${{ "%.2f"|format(user['monthly_budget']) }}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Remaining:</span>
-                <span class="stat-value {{ 'positive' if remaining > 0 else 'negative' }}">${{ "%.2f"|format(remaining) }}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Days Left:</span>
-                <span class="stat-value">{{ days_left }}</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Alerts & Insights -->
-    <div class="card alerts-card">
-        <h3>Alerts & Insights</h3>
-        {% if insights %}
-            {% for insight in insights %}
-                <div class="alert alert-{{ insight.type }}">
-                    <span class="alert-icon">{{ insight.icon }}</span>
-                    <span class="alert-message">{{ insight.message }}</span>
+            <div class="health-circle-container">
+                <svg class="health-circle" viewBox="0 0 200 200">
+                    <circle class="health-circle-bg" cx="100" cy="100" r="85"></circle>
+                    <circle class="health-circle-fill" cx="100" cy="100" r="85"
+                            style="stroke-dasharray: {{ (budget_percentage * 534.07) / 100 }} 534.07;
+                                   stroke: {{ 'var(--success)' if budget_percentage >= 50 else 'var(--warning)' if budget_percentage >= 25 else 'var(--danger)' }};">
+                    </circle>
+                </svg>
+                <div class="health-percentage">
+                    <span class="percentage-number">{{ budget_percentage }}%</span>
+                    <span class="percentage-label">Remaining</span>
                 </div>
-            {% endfor %}
-        {% else %}
-            <p class="no-data">No insights yet. Add some transactions to get started!</p>
-        {% endif %}
+            </div>
+            <div class="health-summary">
+                <div class="summary-item">
+                    <span class="summary-value">${{ "%.2f"|format(remaining) }}</span>
+                    <span class="summary-label">Available</span>
+                </div>
+                <div class="summary-divider"></div>
+                <div class="summary-item">
+                    <span class="summary-value">{{ days_left }}</span>
+                    <span class="summary-label">Days Left</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Spending Summary -->
+        <div class="card">
+            <h3>This Month</h3>
+            <div class="stat-block">
+                <div class="stat-row">
+                    <span class="stat-label">Total Spent</span>
+                    <span class="stat-value stat-spent">${{ "%.2f"|format(total_spent) }}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Budget</span>
+                    <span class="stat-value">${{ "%.2f"|format(user['monthly_budget']) }}</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-row">
+                    <span class="stat-label">Remaining</span>
+                    <span class="stat-value {{ 'stat-positive' if remaining > 0 else 'stat-negative' }}">${{ "%.2f"|format(remaining) }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Savings Progress -->
+        <div class="card">
+            <h3>Savings Progress</h3>
+            <div class="savings-progress">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width: {{ savings_percentage }}%"></div>
+                </div>
+                <div class="stat-block">
+                    <div class="stat-row">
+                        <span class="stat-label">Projected Savings</span>
+                        <span class="stat-value">${{ "%.2f"|format(projected_savings) }}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Goal</span>
+                        <span class="stat-value">${{ "%.2f"|format(user['savings_goal']) }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="quick-actions">
-        <button onclick="showAddTransaction()" class="btn btn-primary btn-large">
-            ➕ Add Transaction
+    <!-- Visualizations -->
+    <div class="charts-section">
+        <!-- Category Breakdown -->
+        <div class="card chart-card">
+            <h3>Spending by Category</h3>
+            <div class="chart-container-dashboard">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Spending Trend -->
+        <div class="card chart-card">
+            <h3>Daily Spending Trend</h3>
+            <div class="chart-container-dashboard">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Action -->
+    <div class="quick-action-floating">
+        <button onclick="showAddTransaction()" class="btn btn-primary btn-floating">
+            <span class="plus-icon">+</span> Add Transaction
         </button>
     </div>
 </div>
@@ -115,9 +157,152 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // Set today's date as default
-    document.getElementById('transaction-date').valueAsDate = new Date();
+    // Wait for DOM to be fully loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        // Set today's date as default
+        document.getElementById('transaction-date').valueAsDate = new Date();
+
+        // Get theme colors
+        function getThemeColor(varName) {
+            return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+        }
+
+        // Category Chart
+        const categoryData = {{ category_data|tojson }};
+        const categoryCanvas = document.getElementById('categoryChart');
+
+        if (categoryCanvas && categoryData && categoryData.labels && categoryData.labels.length > 0) {
+            const ctx1 = categoryCanvas.getContext('2d');
+            new Chart(ctx1, {
+                type: 'doughnut',
+                data: {
+                    labels: categoryData.labels,
+                    datasets: [{
+                        data: categoryData.values,
+                        backgroundColor: [
+                            '#3b82f6', '#10b981', '#f59e0b',
+                            '#ef4444', '#8b5cf6', '#ec4899'
+                        ],
+                        borderWidth: 0,
+                        borderColor: 'transparent'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                font: { size: 12 },
+                                color: getThemeColor('--text-dark'),
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': $' + context.parsed.toFixed(2);
+                                }
+                            }
+                        }
+                    },
+                    animation: {
+                        animateRotate: false,
+                        animateScale: false,
+                        duration: 0
+                    }
+                }
+            });
+        } else if (categoryCanvas) {
+            // Show message if no data
+            const parent = categoryCanvas.parentElement;
+            parent.innerHTML = '<p style="text-align: center; color: var(--text-gray); padding: 2rem;">No spending data yet. Add some transactions to see your category breakdown.</p>';
+        }
+
+        // Trend Chart
+        const trendData = {{ trend_data|tojson }};
+        const trendCanvas = document.getElementById('trendChart');
+
+        if (trendCanvas && trendData && trendData.labels && trendData.labels.length > 0) {
+            const ctx2 = trendCanvas.getContext('2d');
+            new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels: trendData.labels,
+                    datasets: [{
+                        label: 'Daily Spending',
+                        data: trendData.values,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Spent: $' + context.parsed.y.toFixed(2);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false,
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: getThemeColor('--text-gray'),
+                                font: { size: 11 }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: getThemeColor('--border'),
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: getThemeColor('--text-gray'),
+                                font: { size: 11 },
+                                callback: function(value) {
+                                    return '$' + value.toFixed(0);
+                                }
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 0
+                    }
+                }
+            });
+        } else if (trendCanvas) {
+            // Show message if no data
+            const parent = trendCanvas.parentElement;
+            parent.innerHTML = '<p style="text-align: center; color: var(--text-gray); padding: 2rem;">No spending data yet. Add some transactions to see your daily trends.</p>';
+        }
+    });
 
     function showAddTransaction() {
         document.getElementById('add-transaction-modal').style.display = 'block';
@@ -146,7 +331,7 @@
         .then(result => {
             if (result.success) {
                 if (result.is_anomaly) {
-                    alert(`⚠️ Unusual Transaction Detected!\n\nThis transaction is ${Math.abs(result.z_score).toFixed(2)} standard deviations from your average spending in this category.`);
+                    alert('Unusual Transaction Detected!\n\nThis transaction is ' + Math.abs(result.z_score).toFixed(2) + ' standard deviations from your average spending in this category.');
                 }
                 window.location.reload();
             }

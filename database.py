@@ -5,6 +5,7 @@ Database module - SQLite database setup and management
 import sqlite3
 from flask import g
 import os
+from werkzeug.security import generate_password_hash
 
 DATABASE = 'budget_planner.db'
 
@@ -85,4 +86,100 @@ def close_db(e=None):
     """Close database connection"""
     db = getattr(g, '_database', None)
     if db is not None:
+        db.close()
+
+
+def migrate_to_multiuser():
+    """Migrate existing database to support multi-user"""
+    db = sqlite3.connect(DATABASE)
+    cursor = db.cursor()
+
+    try:
+        # Check if users table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        if cursor.fetchone() is None:
+            # Create users table
+            cursor.execute('''
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    email_verified BOOLEAN DEFAULT 0,
+                    verification_token TEXT,
+                    token_expiry TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1
+                )
+            ''')
+
+            # Check if user_settings has user_id column
+            cursor.execute("PRAGMA table_info(user_settings)")
+            columns = [col[1] for col in cursor.fetchall()]
+
+            if 'user_id' not in columns:
+                # Add user_id columns to existing tables
+                cursor.execute('ALTER TABLE user_settings ADD COLUMN user_id INTEGER')
+                cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN user_id INTEGER')
+                cursor.execute('ALTER TABLE transactions ADD COLUMN user_id INTEGER')
+                cursor.execute('ALTER TABLE monthly_stats ADD COLUMN user_id INTEGER')
+
+                # Check if there's existing data (old single-user mode)
+                cursor.execute('SELECT COUNT(*) FROM user_settings')
+                has_data = cursor.fetchone()[0] > 0
+
+                if has_data:
+                    # Get the name from user_settings
+                    cursor.execute('SELECT name FROM user_settings LIMIT 1')
+                    user_name = cursor.fetchone()[0]
+
+                    # Create a default user from existing data
+                    default_password = generate_password_hash('password123')
+                    cursor.execute('''
+                        INSERT INTO users (email, password_hash, name)
+                        VALUES (?, ?, ?)
+                    ''', ('user@budgetplanner.local', default_password, user_name))
+
+                    default_user_id = cursor.lastrowid
+
+                    # Update all existing records to belong to this user
+                    cursor.execute('UPDATE user_settings SET user_id = ?', (default_user_id,))
+                    cursor.execute('UPDATE fixed_expenses SET user_id = ?', (default_user_id,))
+                    cursor.execute('UPDATE transactions SET user_id = ?', (default_user_id,))
+                    cursor.execute('UPDATE monthly_stats SET user_id = ?', (default_user_id,))
+
+                    print(f"Migration complete! Default user created:")
+                    print(f"  Email: user@budgetplanner.local")
+                    print(f"  Password: password123")
+                    print(f"  Please change this password after logging in!")
+
+            db.commit()
+
+        # Add email verification columns to existing users table if they don't exist
+        try:
+            cursor.execute("PRAGMA table_info(users)")
+            user_columns = [col[1] for col in cursor.fetchall()]
+
+            if 'email_verified' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0')
+                print("Added email_verified column to users table")
+
+            if 'verification_token' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN verification_token TEXT')
+                print("Added verification_token column to users table")
+
+            if 'token_expiry' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN token_expiry TIMESTAMP')
+                print("Added token_expiry column to users table")
+
+            db.commit()
+        except Exception as e:
+            print(f"Error adding verification columns: {e}")
+
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"Migration error: {e}")
+        return False
+    finally:
         db.close()

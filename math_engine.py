@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from database import get_db
 
 
-def calculate_category_stats(category, months=6):
+def calculate_category_stats(category, months=6, user_id=None):
     """
     Calculate statistical metrics for a category
 
@@ -31,14 +31,19 @@ def calculate_category_stats(category, months=6):
     """
     db = get_db()
 
+    # Get user_id from session if not provided
+    if user_id is None:
+        from flask import session
+        user_id = session.get('user_id', 1)
+
     # Get data for last N months
     cutoff_date = datetime.now() - timedelta(days=30 * months)
 
     transactions = db.execute('''
         SELECT amount, date FROM transactions
-        WHERE category = ? AND date >= ?
+        WHERE category = ? AND date >= ? AND user_id = ?
         ORDER BY date
-    ''', (category, cutoff_date)).fetchall()
+    ''', (category, cutoff_date, user_id)).fetchall()
 
     if not transactions:
         return None
@@ -103,7 +108,7 @@ def detect_anomaly(category, amount, threshold=2.0):
     return is_anomaly, float(z_score)
 
 
-def run_monte_carlo_simulation(simulations=1000, adjustments=None):
+def run_monte_carlo_simulation(simulations=1000, adjustments=None, user_id=None):
     """
     Run Monte Carlo simulation to predict next month's spending
 
@@ -123,8 +128,13 @@ def run_monte_carlo_simulation(simulations=1000, adjustments=None):
     """
     db = get_db()
 
+    # Get user_id from session if not provided
+    if user_id is None:
+        from flask import session
+        user_id = session.get('user_id', 1)
+
     # Get user settings
-    user = db.execute('SELECT * FROM user_settings WHERE id = 1').fetchone()
+    user = db.execute('SELECT * FROM user_settings WHERE user_id = ?', (user_id,)).fetchone()
     if not user:
         return {'error': 'User not set up'}
 
@@ -132,7 +142,7 @@ def run_monte_carlo_simulation(simulations=1000, adjustments=None):
     savings_goal = user['savings_goal']
 
     # Get fixed expenses
-    fixed_expenses = db.execute('SELECT * FROM fixed_expenses').fetchall()
+    fixed_expenses = db.execute('SELECT * FROM fixed_expenses WHERE user_id = ?', (user_id,)).fetchall()
     fixed_total = sum(
         e['amount'] if e['frequency'] == 'monthly' else e['amount'] * 4.33
         for e in fixed_expenses
@@ -143,7 +153,7 @@ def run_monte_carlo_simulation(simulations=1000, adjustments=None):
     category_distributions = {}
 
     for category in categories:
-        stats = calculate_category_stats(category)
+        stats = calculate_category_stats(category, user_id=user_id)
         if stats and stats['mean'] > 0:
             # Apply adjustments if provided
             mean = stats['mean']
@@ -252,7 +262,7 @@ def calculate_health_score(total_spent, monthly_budget, fixed_total, savings_goa
     return min(100, max(0, int(score)))
 
 
-def get_spending_trends(months=6):
+def get_spending_trends(months=6, user_id=None):
     """
     Get spending trends over last N months
 
@@ -260,13 +270,18 @@ def get_spending_trends(months=6):
     """
     db = get_db()
 
+    # Get user_id from session if not provided
+    if user_id is None:
+        from flask import session
+        user_id = session.get('user_id', 1)
+
     cutoff_date = datetime.now() - timedelta(days=30 * months)
 
     transactions = db.execute('''
         SELECT date, category, amount FROM transactions
-        WHERE date >= ?
+        WHERE date >= ? AND user_id = ?
         ORDER BY date
-    ''', (cutoff_date,)).fetchall()
+    ''', (cutoff_date, user_id)).fetchall()
 
     # Group by month and category
     monthly_data = {}

@@ -13,12 +13,17 @@ from datetime import datetime, timedelta
 from database import get_db
 
 
-def generate_demo_data():
+def generate_demo_data(user_id=None):
     """Generate 6 months of demo transaction data"""
     db = get_db()
 
-    # Clear existing demo data (if any)
-    db.execute('DELETE FROM transactions')
+    if user_id is None:
+        # Get from session or default to 1
+        from flask import session
+        user_id = session.get('user_id', 1)
+
+    # Clear existing demo data for this user (if any)
+    db.execute('DELETE FROM transactions WHERE user_id = ?', (user_id,))
     db.commit()
 
     # Categories with their monthly spending parameters (mean, std_dev)
@@ -102,18 +107,18 @@ def generate_demo_data():
 
                 # Insert transaction
                 db.execute('''
-                    INSERT INTO transactions (date, amount, category, description, is_anomaly, z_score, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (transaction_date, round(amount, 2), category, description, False, 0.0, datetime.now()))
+                    INSERT INTO transactions (user_id, date, amount, category, description, is_anomaly, z_score, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (user_id, transaction_date, round(amount, 2), category, description, False, 0.0, datetime.now()))
 
         # Add anomalies for specific months
         for anomaly_month, anomaly_category, anomaly_amount, anomaly_desc in anomalies:
             if anomaly_month == month_offset:
                 anomaly_date = month_start + timedelta(days=np.random.randint(5, 25))
                 db.execute('''
-                    INSERT INTO transactions (date, amount, category, description, is_anomaly, z_score, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (anomaly_date, anomaly_amount, anomaly_category, anomaly_desc, True, 3.5, datetime.now()))
+                    INSERT INTO transactions (user_id, date, amount, category, description, is_anomaly, z_score, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (user_id, anomaly_date, anomaly_amount, anomaly_category, anomaly_desc, True, 3.5, datetime.now()))
 
     db.commit()
     print(f"Generated demo data: {db.execute('SELECT COUNT(*) as count FROM transactions').fetchone()['count']} transactions")
