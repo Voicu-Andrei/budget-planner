@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - Budget Planner{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Financial Reports</h1>
+    <p>Generate comprehensive PDF reports of your financial data</p>
+</div>
+
+<div class="reports-grid">
+    <!-- Monthly Report Card -->
+    <div class="card report-card">
+        <div class="report-icon">📅</div>
+        <h2>Monthly Report</h2>
+        <p>Detailed breakdown of income, expenses, and assets for a specific month</p>
+
+        <div class="form-group">
+            <label for="monthly-year">Year:</label>
+            <input type="number" id="monthly-year" class="form-control" min="2020" max="2030" value="">
+        </div>
+
+        <div class="form-group">
+            <label for="monthly-month">Month:</label>
+            <select id="monthly-month" class="form-control">
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+            </select>
+        </div>
+
+        <button onclick="generateMonthlyReport()" class="btn btn-primary">
+            Generate Monthly Report
+        </button>
+    </div>
+
+    <!-- Annual Report Card -->
+    <div class="card report-card">
+        <div class="report-icon">📊</div>
+        <h2>Annual Report</h2>
+        <p>Comprehensive year-end summary with month-by-month breakdown and category analysis</p>
+
+        <div class="form-group">
+            <label for="annual-year">Year:</label>
+            <input type="number" id="annual-year" class="form-control" min="2020" max="2030" value="">
+        </div>
+
+        <button onclick="generateAnnualReport()" class="btn btn-primary">
+            Generate Annual Report
+        </button>
+    </div>
+
+    <!-- Category Analysis Report Card -->
+    <div class="card report-card">
+        <div class="report-icon">🏷️</div>
+        <h2>Category Analysis</h2>
+        <p>In-depth analysis of spending in a specific category over a date range</p>
+
+        <div class="form-group">
+            <label for="category-select">Category:</label>
+            <select id="category-select" class="form-control">
+                <option value="Food & Groceries">Food & Groceries</option>
+                <option value="Dining Out">Dining Out</option>
+                <option value="Transportation">Transportation</option>
+                <option value="Entertainment">Entertainment</option>
+                <option value="Shopping">Shopping</option>
+                <option value="Bills & Utilities">Bills & Utilities</option>
+                <option value="Healthcare">Healthcare</option>
+                <option value="Education">Education</option>
+                <option value="Travel">Travel</option>
+                <option value="Other">Other</option>
+            </select>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="category-start">Start Date:</label>
+                <input type="date" id="category-start" class="form-control">
+            </div>
+
+            <div class="form-group">
+                <label for="category-end">End Date:</label>
+                <input type="date" id="category-end" class="form-control">
+            </div>
+        </div>
+
+        <button onclick="generateCategoryReport()" class="btn btn-primary">
+            Generate Category Report
+        </button>
+    </div>
+</div>
+
+<div class="card info-card">
+    <h3>About Reports</h3>
+    <ul>
+        <li><strong>Monthly Reports:</strong> Include income summary, expense breakdown, financial summary (net income, savings rate), and asset portfolio for the selected month.</li>
+        <li><strong>Annual Reports:</strong> Provide a full year overview with monthly breakdown, category analysis, and annual statistics.</li>
+        <li><strong>Category Reports:</strong> Deep dive into spending patterns for a specific category with transaction details and statistics.</li>
+        <li><strong>Format:</strong> All reports are generated as professional PDF documents that can be saved, printed, or shared.</li>
+    </ul>
+</div>
+
+<script>
+// Set default values to current month/year
+document.addEventListener('DOMContentLoaded', function() {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    document.getElementById('monthly-year').value = currentYear;
+    document.getElementById('monthly-month').value = currentMonth;
+    document.getElementById('annual-year').value = currentYear;
+
+    // Set default date range to last 30 days
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    document.getElementById('category-start').value = startDate.toISOString().split('T')[0];
+    document.getElementById('category-end').value = endDate.toISOString().split('T')[0];
+});
+
+function generateMonthlyReport() {
+    const year = document.getElementById('monthly-year').value;
+    const month = document.getElementById('monthly-month').value;
+
+    if (!year || !month) {
+        alert('Please select both year and month');
+        return;
+    }
+
+    // Trigger download
+    window.location.href = `/api/reports/monthly/${year}/${month}`;
+}
+
+function generateAnnualReport() {
+    const year = document.getElementById('annual-year').value;
+
+    if (!year) {
+        alert('Please select a year');
+        return;
+    }
+
+    // Trigger download
+    window.location.href = `/api/reports/annual/${year}`;
+}
+
+async function generateCategoryReport() {
+    const category = document.getElementById('category-select').value;
+    const startDate = document.getElementById('category-start').value;
+    const endDate = document.getElementById('category-end').value;
+
+    if (!category || !startDate || !endDate) {
+        alert('Please fill in all fields');
+        return;
+    }
+
+    if (new Date(startDate) > new Date(endDate)) {
+        alert('Start date must be before end date');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/reports/category', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                category: category,
+                start_date: startDate,
+                end_date: endDate
+            })
+        });
+
+        if (response.ok) {
+            // Create a blob from the response and trigger download
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Category_Report_${category}_${startDate}_to_${endDate}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else {
+            alert('Error generating report');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error generating report');
+    }
+}
+</script>
+{% endblock %}

@@ -20,6 +20,8 @@ A comprehensive personal finance management web application with advanced featur
 - **Recurring Transactions**: Automated recurring expense templates (monthly bills, subscriptions)
 - **Transaction Tags**: Organize transactions with custom color-coded tags
 - **Data Export**: Export transactions, income, and financial summaries to CSV
+- **PDF Reports**: Generate professional monthly, annual, and category analysis reports
+- **Shared Budgets**: Collaborate on household/family budgets with multiple users
 - **Performance Optimized**: Database indexing for fast queries
 
 ### Advanced Analytics
@@ -90,6 +92,22 @@ Four-tab interface for deep insights:
 3. **Comparisons**: Month-over-month and year-over-year comparisons
 4. **Predictions**: Monte Carlo simulations for future outcomes
 
+### Reports Page
+
+Generate professional PDF reports:
+- **Monthly Reports**: Comprehensive monthly breakdown with income, expenses, and assets
+- **Annual Reports**: Full year overview with monthly trends and category analysis
+- **Category Reports**: Deep dive into specific spending categories
+
+### Shared Budgets
+
+Collaborate with family or roommates:
+- Create shared household budgets
+- Invite members with different roles (owner, admin, member)
+- Accept or decline budget invitations
+- Manage members and permissions
+- Track shared expenses together
+
 ### Settings
 
 Manage your account:
@@ -107,6 +125,7 @@ Manage your account:
 - **Frontend**: HTML, CSS, JavaScript
 - **Charts**: Chart.js
 - **Math Libraries**: NumPy, SciPy
+- **PDF Generation**: ReportLab, Matplotlib
 
 ### Key Mathematical Concepts
 - Z-score anomaly detection for outlier transactions
@@ -123,25 +142,31 @@ Manage your account:
 
 ```
 budget-planner/
-├── app.py                  # Main Flask application
-├── database.py             # Database initialization and management
-├── math_engine.py          # Statistical calculations and algorithms
-├── demo_data.py            # Demo data generation
-├── requirements.txt        # Python dependencies
-├── templates/              # HTML templates
+├── app.py                      # Main Flask application
+├── database.py                 # Database initialization and management
+├── math_engine.py              # Statistical calculations and algorithms
+├── demo_data.py                # Demo data generation
+├── email_utils.py              # Email sending utilities
+├── reports.py                  # PDF report generation
+├── requirements.txt            # Python dependencies
+├── templates/                  # HTML templates
 │   ├── base.html
 │   ├── login.html
 │   ├── signup.html
 │   ├── setup.html
 │   ├── dashboard.html
 │   ├── transactions.html
+│   ├── income.html
+│   ├── assets.html
+│   ├── shared_budgets.html
 │   ├── analysis.html
+│   ├── reports.html
 │   └── settings.html
 └── static/
     ├── css/
-    │   └── style.css      # Application styles
+    │   └── style.css          # Application styles
     └── js/
-        └── main.js        # JavaScript utilities
+        └── main.js            # JavaScript utilities
 
 ```
 

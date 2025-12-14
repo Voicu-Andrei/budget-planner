@@ -23,6 +23,7 @@ from math_engine import (
 )
 from demo_data import generate_demo_data
 from email_utils import send_verification_email, send_welcome_email, send_password_reset_email, generate_verification_token
+from reports import generate_monthly_report, generate_annual_report, generate_category_report
 
 
 def convert_currency(amount, from_currency, to_currency, user_id):
@@ -1597,6 +1598,399 @@ def generate_insights(transactions, user, fixed_total):
                 })
 
     return insights
+
+
+# ============================================
+# SHARED BUDGETS ROUTES
+# ============================================
+
+@app.route('/shared-budgets')
+@login_required
+def shared_budgets_page():
+    """Shared budgets management page"""
+    return render_template('shared_budgets.html')
+
+
+@app.route('/api/shared-budgets', methods=['GET', 'POST'])
+@login_required
+def shared_budgets_api():
+    """API endpoint for shared budgets management"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        data = request.json
+
+        # Create new shared budget
+        name = data['name']
+        description = data.get('description', '')
+        monthly_budget = float(data['monthly_budget'])
+        savings_goal = float(data.get('savings_goal', 0))
+
+        cursor = db.execute('''
+            INSERT INTO shared_budgets (name, description, monthly_budget, savings_goal, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (name, description, monthly_budget, savings_goal, user_id, datetime.now()))
+
+        budget_id = cursor.lastrowid
+
+        # Add creator as owner
+        db.execute('''
+            INSERT INTO budget_members (budget_id, user_id, role, status, invited_by, invited_at, joined_at)
+            VALUES (?, ?, 'owner', 'active', ?, ?, ?)
+        ''', (budget_id, user_id, user_id, datetime.now(), datetime.now()))
+
+        db.commit()
+
+        return jsonify({'success': True, 'budget_id': budget_id})
+
+    # GET - return all shared budgets where user is a member
+    budgets = db.execute('''
+        SELECT
+            sb.*,
+            bm.role,
+            bm.status,
+            u.name as created_by_name
+        FROM shared_budgets sb
+        JOIN budget_members bm ON sb.id = bm.budget_id
+        JOIN users u ON sb.created_by = u.id
+        WHERE bm.user_id = ? AND bm.status = 'active' AND sb.is_active = 1
+        ORDER BY sb.created_at DESC
+    ''', (user_id,)).fetchall()
+
+    # Get member counts for each budget
+    budget_list = []
+    for budget in budgets:
+        member_count = db.execute('''
+            SELECT COUNT(*) as count FROM budget_members
+            WHERE budget_id = ? AND status = 'active'
+        ''', (budget['id'],)).fetchone()['count']
+
+        budget_list.append({
+            **dict(budget),
+            'member_count': member_count
+        })
+
+    return jsonify({'budgets': budget_list})
+
+
+@app.route('/api/shared-budgets/<int:budget_id>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def shared_budget_operations(budget_id):
+    """Operations on a specific shared budget"""
+    db = get_db()
+    user_id = session['user_id']
+
+    # Check if user has access to this budget
+    membership = db.execute('''
+        SELECT role, status FROM budget_members
+        WHERE budget_id = ? AND user_id = ?
+    ''', (budget_id, user_id)).fetchone()
+
+    if not membership or membership['status'] != 'active':
+        return jsonify({'error': 'Access denied'}), 403
+
+    if request.method == 'GET':
+        # Get budget details
+        budget = db.execute('''
+            SELECT sb.*, u.name as created_by_name
+            FROM shared_budgets sb
+            JOIN users u ON sb.created_by = u.id
+            WHERE sb.id = ?
+        ''', (budget_id,)).fetchone()
+
+        # Get members
+        members = db.execute('''
+            SELECT bm.*, u.name, u.email
+            FROM budget_members bm
+            JOIN users u ON bm.user_id = u.id
+            WHERE bm.budget_id = ?
+            ORDER BY bm.joined_at DESC
+        ''', (budget_id,)).fetchall()
+
+        return jsonify({
+            'budget': dict(budget),
+            'members': [dict(m) for m in members]
+        })
+
+    elif request.method == 'PUT':
+        # Only owner and admin can update
+        if membership['role'] not in ['owner', 'admin']:
+            return jsonify({'error': 'Insufficient permissions'}), 403
+
+        data = request.json
+        name = data.get('name')
+        description = data.get('description')
+        monthly_budget = float(data.get('monthly_budget'))
+        savings_goal = float(data.get('savings_goal', 0))
+
+        db.execute('''
+            UPDATE shared_budgets
+            SET name = ?, description = ?, monthly_budget = ?, savings_goal = ?
+            WHERE id = ?
+        ''', (name, description, monthly_budget, savings_goal, budget_id))
+
+        db.commit()
+
+        return jsonify({'success': True})
+
+    elif request.method == 'DELETE':
+        # Only owner can delete
+        if membership['role'] != 'owner':
+            return jsonify({'error': 'Only owner can delete budget'}), 403
+
+        db.execute('DELETE FROM shared_budgets WHERE id = ?', (budget_id,))
+        db.commit()
+
+        return jsonify({'success': True})
+
+
+@app.route('/api/shared-budgets/<int:budget_id>/members', methods=['POST'])
+@login_required
+def invite_budget_member(budget_id):
+    """Invite a user to a shared budget"""
+    db = get_db()
+    user_id = session['user_id']
+
+    # Check if user has permission to invite (owner or admin)
+    membership = db.execute('''
+        SELECT role FROM budget_members
+        WHERE budget_id = ? AND user_id = ? AND status = 'active'
+    ''', (budget_id, user_id)).fetchone()
+
+    if not membership or membership['role'] not in ['owner', 'admin']:
+        return jsonify({'error': 'Insufficient permissions'}), 403
+
+    data = request.json
+    invite_email = data['email']
+    role = data.get('role', 'member')
+
+    # Find user by email
+    invite_user = db.execute('SELECT id FROM users WHERE email = ?', (invite_email,)).fetchone()
+
+    if not invite_user:
+        return jsonify({'error': 'User not found'}), 404
+
+    invite_user_id = invite_user['id']
+
+    # Check if already a member
+    existing = db.execute('''
+        SELECT * FROM budget_members
+        WHERE budget_id = ? AND user_id = ?
+    ''', (budget_id, invite_user_id)).fetchone()
+
+    if existing:
+        return jsonify({'error': 'User already invited or member'}), 400
+
+    # Create invitation
+    db.execute('''
+        INSERT INTO budget_members (budget_id, user_id, role, status, invited_by, invited_at)
+        VALUES (?, ?, ?, 'pending', ?, ?)
+    ''', (budget_id, invite_user_id, role, user_id, datetime.now()))
+
+    db.commit()
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/shared-budgets/<int:budget_id>/members/<int:member_user_id>', methods=['DELETE'])
+@login_required
+def remove_budget_member(budget_id, member_user_id):
+    """Remove a member from shared budget"""
+    db = get_db()
+    user_id = session['user_id']
+
+    # Check permissions
+    membership = db.execute('''
+        SELECT role FROM budget_members
+        WHERE budget_id = ? AND user_id = ? AND status = 'active'
+    ''', (budget_id, user_id)).fetchone()
+
+    # User can remove themselves, or owner/admin can remove others
+    can_remove = (user_id == member_user_id) or (membership and membership['role'] in ['owner', 'admin'])
+
+    if not can_remove:
+        return jsonify({'error': 'Insufficient permissions'}), 403
+
+    db.execute('''
+        DELETE FROM budget_members
+        WHERE budget_id = ? AND user_id = ?
+    ''', (budget_id, member_user_id))
+
+    db.commit()
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/budget-invitations', methods=['GET'])
+@login_required
+def get_budget_invitations():
+    """Get pending budget invitations for current user"""
+    db = get_db()
+    user_id = session['user_id']
+
+    invitations = db.execute('''
+        SELECT
+            bm.*,
+            sb.name as budget_name,
+            sb.description,
+            u.name as invited_by_name
+        FROM budget_members bm
+        JOIN shared_budgets sb ON bm.budget_id = sb.id
+        JOIN users u ON bm.invited_by = u.id
+        WHERE bm.user_id = ? AND bm.status = 'pending'
+        ORDER BY bm.invited_at DESC
+    ''', (user_id,)).fetchall()
+
+    return jsonify({'invitations': [dict(i) for i in invitations]})
+
+
+@app.route('/api/budget-invitations/<int:invitation_id>/respond', methods=['POST'])
+@login_required
+def respond_to_invitation(invitation_id):
+    """Accept or decline a budget invitation"""
+    db = get_db()
+    user_id = session['user_id']
+    data = request.json
+    response_action = data['action']  # 'accept' or 'decline'
+
+    # Verify this invitation belongs to current user
+    invitation = db.execute('''
+        SELECT * FROM budget_members
+        WHERE id = ? AND user_id = ? AND status = 'pending'
+    ''', (invitation_id, user_id)).fetchone()
+
+    if not invitation:
+        return jsonify({'error': 'Invitation not found'}), 404
+
+    if response_action == 'accept':
+        db.execute('''
+            UPDATE budget_members
+            SET status = 'active', joined_at = ?
+            WHERE id = ?
+        ''', (datetime.now(), invitation_id))
+    elif response_action == 'decline':
+        db.execute('''
+            UPDATE budget_members
+            SET status = 'declined'
+            WHERE id = ?
+        ''', (invitation_id,))
+    else:
+        return jsonify({'error': 'Invalid action'}), 400
+
+    db.commit()
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/shared-budgets/<int:budget_id>/transactions', methods=['POST'])
+@login_required
+def add_transaction_to_budget(budget_id):
+    """Add a transaction to a shared budget"""
+    db = get_db()
+    user_id = session['user_id']
+
+    # Check if user is a member
+    membership = db.execute('''
+        SELECT * FROM budget_members
+        WHERE budget_id = ? AND user_id = ? AND status = 'active'
+    ''', (budget_id, user_id)).fetchone()
+
+    if not membership:
+        return jsonify({'error': 'Access denied'}), 403
+
+    data = request.json
+    transaction_id = data['transaction_id']
+
+    # Link transaction to budget
+    try:
+        db.execute('''
+            INSERT INTO budget_transactions (transaction_id, budget_id)
+            VALUES (?, ?)
+        ''', (transaction_id, budget_id))
+
+        db.commit()
+
+        return jsonify({'success': True})
+    except:
+        return jsonify({'error': 'Transaction already linked or not found'}), 400
+
+
+# ============================================
+# REPORTS ROUTES
+# ============================================
+
+@app.route('/reports')
+@login_required
+def reports_page():
+    """Reports page with options to generate various reports"""
+    return render_template('reports.html')
+
+
+@app.route('/api/reports/monthly/<int:year>/<int:month>')
+@login_required
+def download_monthly_report(year, month):
+    """Generate and download monthly PDF report"""
+    user_id = session['user_id']
+
+    try:
+        pdf_buffer = generate_monthly_report(user_id, year, month)
+        month_name = datetime(year, month, 1).strftime('%B_%Y')
+
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'Monthly_Report_{month_name}.pdf'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/reports/annual/<int:year>')
+@login_required
+def download_annual_report(year):
+    """Generate and download annual PDF report"""
+    user_id = session['user_id']
+
+    try:
+        pdf_buffer = generate_annual_report(user_id, year)
+
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'Annual_Report_{year}.pdf'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/reports/category', methods=['POST'])
+@login_required
+def download_category_report():
+    """Generate and download category analysis PDF report"""
+    user_id = session['user_id']
+    data = request.json
+
+    category = data.get('category')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+
+    if not all([category, start_date, end_date]):
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    try:
+        pdf_buffer = generate_category_report(user_id, category, start_date, end_date)
+
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'Category_Report_{category}_{start_date}_to_{end_date}.pdf'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

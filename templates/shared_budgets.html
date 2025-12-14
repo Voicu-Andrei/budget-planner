@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+
+{% block title %}Shared Budgets - Budget Planner{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Shared Budgets</h1>
+    <p>Manage household and family budgets together</p>
+</div>
+
+<!-- Pending Invitations -->
+<div id="invitations-section" class="card" style="display: none;">
+    <h2>Pending Invitations</h2>
+    <div id="invitations-container"></div>
+</div>
+
+<!-- Your Shared Budgets -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2>Your Shared Budgets</h2>
+        <button onclick="showCreateBudgetModal()" class="btn btn-primary">Create New Budget</button>
+    </div>
+
+    <div id="budgets-grid" class="budgets-grid">
+        <!-- Budgets will be loaded here -->
+    </div>
+
+    <div id="no-budgets" style="display: none; text-align: center; padding: 3rem; color: var(--text-gray);">
+        <p>No shared budgets yet. Create one to start collaborating!</p>
+    </div>
+</div>
+
+<!-- Create Budget Modal -->
+<div id="createBudgetModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Create Shared Budget</h2>
+            <span class="close" onclick="closeCreateBudgetModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="budget-name">Budget Name:</label>
+                <input type="text" id="budget-name" class="form-control" placeholder="e.g., Family Budget, Roommate Expenses">
+            </div>
+
+            <div class="form-group">
+                <label for="budget-description">Description (optional):</label>
+                <textarea id="budget-description" class="form-control" rows="3" placeholder="What is this budget for?"></textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="budget-monthly">Monthly Budget:</label>
+                    <input type="number" id="budget-monthly" class="form-control" step="0.01" min="0" placeholder="0.00">
+                </div>
+
+                <div class="form-group">
+                    <label for="budget-savings">Savings Goal:</label>
+                    <input type="number" id="budget-savings" class="form-control" step="0.01" min="0" placeholder="0.00">
+                </div>
+            </div>
+
+            <button onclick="createBudget()" class="btn btn-primary" style="width: 100%;">Create Budget</button>
+        </div>
+    </div>
+</div>
+
+<!-- Budget Details Modal -->
+<div id="budgetDetailsModal" class="modal">
+    <div class="modal-content modal-large">
+        <div class="modal-header">
+            <h2 id="details-budget-name">Budget Details</h2>
+            <span class="close" onclick="closeBudgetDetailsModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <div class="budget-details-grid">
+                <div class="card">
+                    <h3>Budget Information</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Monthly Budget:</span>
+                        <span class="stat-value" id="details-monthly">$0.00</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Savings Goal:</span>
+                        <span class="stat-value" id="details-savings">$0.00</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Created By:</span>
+                        <span class="stat-value" id="details-creator">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Your Role:</span>
+                        <span class="stat-value" id="details-role">-</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Members</h3>
+                    <div id="members-list"></div>
+                    <button onclick="showInviteMemberForm()" class="btn btn-secondary" style="width: 100%; margin-top: 1rem;">Invite Member</button>
+                    <div id="invite-form" style="display: none; margin-top: 1rem;">
+                        <div class="form-group">
+                            <label>Email:</label>
+                            <input type="email" id="invite-email" class="form-control" placeholder="user@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label>Role:</label>
+                            <select id="invite-role" class="form-control">
+                                <option value="member">Member</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button onclick="inviteMember()" class="btn btn-primary">Send Invitation</button>
+                        <button onclick="hideInviteMemberForm()" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="leaveBudget()" class="btn btn-danger">Leave Budget</button>
+                <button onclick="closeBudgetDetailsModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentBudgetId = null;
+let currentUserRole = null;
+
+// Load budgets and invitations on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadBudgets();
+    loadInvitations();
+});
+
+async function loadBudgets() {
+    try {
+        const response = await fetch('/api/shared-budgets');
+        const data = await response.json();
+
+        const grid = document.getElementById('budgets-grid');
+        const noBudgets = document.getElementById('no-budgets');
+
+        if (data.budgets && data.budgets.length > 0) {
+            grid.innerHTML = data.budgets.map(budget => `
+                <div class="budget-card" onclick="showBudgetDetails(${budget.id})">
+                    <h3>${budget.name}</h3>
+                    ${budget.description ? `<p class="budget-description">${budget.description}</p>` : ''}
+                    <div class="budget-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Monthly Budget</span>
+                            <span class="stat-value">$${budget.monthly_budget.toFixed(2)}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Members</span>
+                            <span class="stat-value">${budget.member_count}</span>
+                        </div>
+                    </div>
+                    <div class="budget-role-badge ${budget.role}">${budget.role.toUpperCase()}</div>
+                </div>
+            `).join('');
+            grid.style.display = 'grid';
+            noBudgets.style.display = 'none';
+        } else {
+            grid.style.display = 'none';
+            noBudgets.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error loading budgets:', error);
+    }
+}
+
+async function loadInvitations() {
+    try {
+        const response = await fetch('/api/budget-invitations');
+        const data = await response.json();
+
+        const section = document.getElementById('invitations-section');
+        const container = document.getElementById('invitations-container');
+
+        if (data.invitations && data.invitations.length > 0) {
+            container.innerHTML = data.invitations.map(inv => `
+                <div class="invitation-card">
+                    <div class="invitation-info">
+                        <h4>${inv.budget_name}</h4>
+                        <p>Invited by ${inv.invited_by_name} as ${inv.role}</p>
+                        ${inv.description ? `<p class="invitation-description">${inv.description}</p>` : ''}
+                    </div>
+                    <div class="invitation-actions">
+                        <button onclick="respondToInvitation(${inv.id}, 'accept')" class="btn btn-primary btn-sm">Accept</button>
+                        <button onclick="respondToInvitation(${inv.id}, 'decline')" class="btn btn-danger btn-sm">Decline</button>
+                    </div>
+                </div>
+            `).join('');
+            section.style.display = 'block';
+        } else {
+            section.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading invitations:', error);
+    }
+}
+
+async function respondToInvitation(invitationId, action) {
+    try {
+        const response = await fetch(`/api/budget-invitations/${invitationId}/respond`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action })
+        });
+
+        if (response.ok) {
+            alert(action === 'accept' ? 'Invitation accepted!' : 'Invitation declined');
+            loadInvitations();
+            loadBudgets();
+        } else {
+            alert('Error responding to invitation');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error responding to invitation');
+    }
+}
+
+function showCreateBudgetModal() {
+    document.getElementById('createBudgetModal').style.display = 'block';
+}
+
+function closeCreateBudgetModal() {
+    document.getElementById('createBudgetModal').style.display = 'none';
+    document.getElementById('budget-name').value = '';
+    document.getElementById('budget-description').value = '';
+    document.getElementById('budget-monthly').value = '';
+    document.getElementById('budget-savings').value = '';
+}
+
+async function createBudget() {
+    const name = document.getElementById('budget-name').value.trim();
+    const description = document.getElementById('budget-description').value.trim();
+    const monthly_budget = parseFloat(document.getElementById('budget-monthly').value);
+    const savings_goal = parseFloat(document.getElementById('budget-savings').value) || 0;
+
+    if (!name || !monthly_budget || monthly_budget <= 0) {
+        alert('Please enter a name and valid monthly budget');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/shared-budgets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description, monthly_budget, savings_goal })
+        });
+
+        if (response.ok) {
+            alert('Budget created successfully!');
+            closeCreateBudgetModal();
+            loadBudgets();
+        } else {
+            alert('Error creating budget');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error creating budget');
+    }
+}
+
+async function showBudgetDetails(budgetId) {
+    currentBudgetId = budgetId;
+
+    try {
+        const response = await fetch(`/api/shared-budgets/${budgetId}`);
+        const data = await response.json();
+
+        const budget = data.budget;
+        const members = data.members;
+
+        // Find current user's role
+        const currentUserId = {{ session.get('user_id', 0) }};
+        const currentMember = members.find(m => m.user_id === currentUserId);
+        currentUserRole = currentMember ? currentMember.role : null;
+
+        document.getElementById('details-budget-name').textContent = budget.name;
+        document.getElementById('details-monthly').textContent = `$${budget.monthly_budget.toFixed(2)}`;
+        document.getElementById('details-savings').textContent = `$${budget.savings_goal.toFixed(2)}`;
+        document.getElementById('details-creator').textContent = budget.created_by_name;
+        document.getElementById('details-role').textContent = currentUserRole ? currentUserRole.toUpperCase() : 'MEMBER';
+
+        const membersList = document.getElementById('members-list');
+        membersList.innerHTML = members.map(m => `
+            <div class="member-item">
+                <div>
+                    <strong>${m.name}</strong>
+                    <span class="member-role ${m.role}">${m.role}</span>
+                    ${m.status === 'pending' ? '<span class="member-status pending">Pending</span>' : ''}
+                </div>
+                ${currentUserRole === 'owner' && m.user_id !== currentUserId ?
+                    `<button onclick="removeMember(${m.user_id})" class="btn btn-danger btn-sm">Remove</button>` : ''}
+            </div>
+        `).join('');
+
+        document.getElementById('budgetDetailsModal').style.display = 'block';
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error loading budget details');
+    }
+}
+
+function closeBudgetDetailsModal() {
+    document.getElementById('budgetDetailsModal').style.display = 'none';
+    currentBudgetId = null;
+    hideInviteMemberForm();
+}
+
+function showInviteMemberForm() {
+    if (currentUserRole !== 'owner' && currentUserRole !== 'admin') {
+        alert('Only owners and admins can invite members');
+        return;
+    }
+    document.getElementById('invite-form').style.display = 'block';
+}
+
+function hideInviteMemberForm() {
+    document.getElementById('invite-form').style.display = 'none';
+    document.getElementById('invite-email').value = '';
+}
+
+async function inviteMember() {
+    const email = document.getElementById('invite-email').value.trim();
+    const role = document.getElementById('invite-role').value;
+
+    if (!email) {
+        alert('Please enter an email');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/shared-budgets/${currentBudgetId}/members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, role })
+        });
+
+        if (response.ok) {
+            alert('Invitation sent!');
+            hideInviteMemberForm();
+            showBudgetDetails(currentBudgetId);
+        } else {
+            const error = await response.json();
+            alert(error.error || 'Error sending invitation');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error sending invitation');
+    }
+}
+
+async function removeMember(userId) {
+    if (!confirm('Are you sure you want to remove this member?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/shared-budgets/${currentBudgetId}/members/${userId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            alert('Member removed');
+            showBudgetDetails(currentBudgetId);
+        } else {
+            alert('Error removing member');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error removing member');
+    }
+}
+
+async function leaveBudget() {
+    if (!confirm('Are you sure you want to leave this budget?')) {
+        return;
+    }
+
+    const currentUserId = {{ session.get('user_id', 0) }};
+
+    try {
+        const response = await fetch(`/api/shared-budgets/${currentBudgetId}/members/${currentUserId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            alert('You have left the budget');
+            closeBudgetDetailsModal();
+            loadBudgets();
+        } else {
+            alert('Error leaving budget');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error leaving budget');
+    }
+}
+
+// Close modals when clicking outside
+window.onclick = function(event) {
+    const createModal = document.getElementById('createBudgetModal');
+    const detailsModal = document.getElementById('budgetDetailsModal');
+
+    if (event.target == createModal) {
+        closeCreateBudgetModal();
+    }
+    if (event.target == detailsModal) {
+        closeBudgetDetailsModal();
+    }
+}
+</script>
+{% endblock %}

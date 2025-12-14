@@ -198,6 +198,50 @@ def migrate_to_multiuser():
             )
         ''')
 
+        # Create shared_budgets table for household/family budgets
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS shared_budgets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                monthly_budget REAL NOT NULL,
+                savings_goal REAL DEFAULT 0,
+                created_by INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT 1,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            )
+        ''')
+
+        # Create budget_members table for tracking who has access to shared budgets
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS budget_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                budget_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('owner', 'admin', 'member')) DEFAULT 'member',
+                status TEXT NOT NULL CHECK(status IN ('pending', 'active', 'declined')) DEFAULT 'pending',
+                invited_by INTEGER NOT NULL,
+                invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                joined_at TIMESTAMP,
+                UNIQUE(budget_id, user_id),
+                FOREIGN KEY (budget_id) REFERENCES shared_budgets(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (invited_by) REFERENCES users(id)
+            )
+        ''')
+
+        # Create budget_transactions table to link transactions to budgets
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS budget_transactions (
+                transaction_id INTEGER NOT NULL,
+                budget_id INTEGER NOT NULL,
+                PRIMARY KEY (transaction_id, budget_id),
+                FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+                FOREIGN KEY (budget_id) REFERENCES shared_budgets(id) ON DELETE CASCADE
+            )
+        ''')
+
         # Add currency column to transactions if it doesn't exist
         cursor.execute("PRAGMA table_info(transactions)")
         transaction_columns = [col[1] for col in cursor.fetchall()]
@@ -330,6 +374,16 @@ def migrate_to_multiuser():
 
             # Index on asset_history table
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_asset_history_asset ON asset_history(asset_id, recorded_at)')
+
+            # Index on shared_budgets table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_shared_budgets_created_by ON shared_budgets(created_by)')
+
+            # Index on budget_members table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_budget_members_user ON budget_members(user_id, status)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_budget_members_budget ON budget_members(budget_id, status)')
+
+            # Index on budget_transactions table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_budget_transactions_budget ON budget_transactions(budget_id)')
 
             db.commit()
             print("Database indexes created successfully")
