@@ -1039,6 +1039,86 @@ def generate_recurring_api():
     return jsonify({'success': True, 'generated': count})
 
 
+@app.route('/api/tags', methods=['GET', 'POST'])
+@login_required
+def tags_api():
+    """API endpoint for tags management"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        data = request.json
+        name = data['name']
+        color = data.get('color', '#667eea')
+
+        try:
+            db.execute('''
+                INSERT INTO tags (user_id, name, color, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (user_id, name, color, datetime.now()))
+            db.commit()
+            return jsonify({'success': True})
+        except:
+            return jsonify({'success': False, 'error': 'Tag already exists'}), 400
+
+    # GET - return all tags for current user
+    tags = db.execute('''
+        SELECT * FROM tags
+        WHERE user_id = ?
+        ORDER BY name
+    ''', (user_id,)).fetchall()
+
+    return jsonify({
+        'tags': [dict(t) for t in tags]
+    })
+
+
+@app.route('/api/tags/<int:tag_id>', methods=['DELETE'])
+@login_required
+def delete_tag(tag_id):
+    """Delete a tag"""
+    db = get_db()
+    db.execute('DELETE FROM tags WHERE id = ? AND user_id = ?', (tag_id, session['user_id']))
+    db.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/transactions/<int:transaction_id>/tags', methods=['POST', 'GET'])
+@login_required
+def transaction_tags(transaction_id):
+    """Manage tags for a transaction"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        data = request.json
+        tag_ids = data.get('tag_ids', [])
+
+        # First, remove all existing tags for this transaction
+        db.execute('DELETE FROM transaction_tags WHERE transaction_id = ?', (transaction_id,))
+
+        # Add new tags
+        for tag_id in tag_ids:
+            db.execute('''
+                INSERT INTO transaction_tags (transaction_id, tag_id)
+                VALUES (?, ?)
+            ''', (transaction_id, tag_id))
+
+        db.commit()
+        return jsonify({'success': True})
+
+    # GET - return tags for this transaction
+    tags = db.execute('''
+        SELECT t.* FROM tags t
+        JOIN transaction_tags tt ON t.id = tt.tag_id
+        WHERE tt.transaction_id = ? AND t.user_id = ?
+    ''', (transaction_id, user_id)).fetchall()
+
+    return jsonify({
+        'tags': [dict(t) for t in tags]
+    })
+
+
 @app.route('/api/income', methods=['GET', 'POST'])
 @login_required
 def income_api():

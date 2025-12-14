@@ -1,23 +1,33 @@
 # Budget Planner
 
-A professional personal budget tracking web application that uses discrete mathematics, probability theory, and statistical analysis to help you manage your finances intelligently.
+A comprehensive personal finance management web application with advanced features for tracking income, expenses, investments, and achieving financial goals.
 
 ## Features
 
 ### Core Functionality
-- **Multi-User Support**: Secure authentication system with individual user accounts
-- **Smart Dashboard**: Visual overview of your financial health at a glance
-- **Transaction Management**: Track all your expenses with detailed categorization
-- **Statistical Analysis**: View spending trends and patterns over time
+- **Multi-User Support**: Secure authentication system with email verification
+- **Password Reset**: Forgot password workflow with email tokens
+- **Smart Dashboard**: Visual overview showing income, expenses, and net income
+- **Transaction Management**: Track expenses with categories, tags, and currency support
+- **Income Tracking**: Record all income sources (salary, freelance, investments, etc.)
+- **Investment & Assets**: Track stocks, savings, property, crypto, and other assets
 - **Budget Tracking**: Set monthly budgets and savings goals
 - **Fixed Expenses**: Manage recurring expenses separately
 - **Dark Mode**: Professional light and dark themes
+
+### Advanced Features
+- **Multi-Currency Support**: Track transactions in different currencies with exchange rates
+- **Recurring Transactions**: Automated recurring expense templates (monthly bills, subscriptions)
+- **Transaction Tags**: Organize transactions with custom color-coded tags
+- **Data Export**: Export transactions, income, and financial summaries to CSV
+- **Performance Optimized**: Database indexing for fast queries
 
 ### Advanced Analytics
 - **Anomaly Detection**: Automatically flag unusual transactions using z-scores
 - **Monte Carlo Predictions**: Predict future budget outcomes using probability distributions
 - **Spending Comparisons**: Month-over-month and category-based analysis
-- **Health Metrics**: Simplified budget health tracking based on percentage remaining
+- **Health Metrics**: Budget health tracking based on percentage remaining
+- **Asset Portfolio**: Track total value, gains/losses, and performance by asset type
 
 ## Installation
 

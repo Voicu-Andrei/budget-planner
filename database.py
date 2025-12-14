@@ -160,6 +160,30 @@ def migrate_to_multiuser():
             )
         ''')
 
+        # Create tags table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                color TEXT DEFAULT '#667eea',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, name),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+
+        # Create transaction_tags junction table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS transaction_tags (
+                transaction_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                PRIMARY KEY (transaction_id, tag_id),
+                FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            )
+        ''')
+
         # Create exchange_rates table for currency conversion
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS exchange_rates (
