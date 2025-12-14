@@ -141,6 +141,25 @@ def migrate_to_multiuser():
             )
         ''')
 
+        # Create recurring_transactions table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS recurring_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                currency TEXT DEFAULT 'USD',
+                frequency TEXT NOT NULL CHECK(frequency IN ('daily', 'weekly', 'bi-weekly', 'monthly', 'quarterly', 'annually')),
+                start_date DATE NOT NULL,
+                end_date DATE,
+                last_generated DATE,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+
         # Create exchange_rates table for currency conversion
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS exchange_rates (
@@ -233,7 +252,7 @@ def migrate_to_multiuser():
 
             db.commit()
 
-        # Add email verification columns to existing users table if they don't exist
+        # Add email verification and password reset columns to existing users table if they don't exist
         try:
             cursor.execute("PRAGMA table_info(users)")
             user_columns = [col[1] for col in cursor.fetchall()]
@@ -250,9 +269,48 @@ def migrate_to_multiuser():
                 cursor.execute('ALTER TABLE users ADD COLUMN token_expiry TIMESTAMP')
                 print("Added token_expiry column to users table")
 
+            if 'reset_token' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
+                print("Added reset_token column to users table")
+
+            if 'reset_token_expiry' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN reset_token_expiry TIMESTAMP')
+                print("Added reset_token_expiry column to users table")
+
             db.commit()
         except Exception as e:
-            print(f"Error adding verification columns: {e}")
+            print(f"Error adding verification/reset columns: {e}")
+
+        # Create indexes for better performance
+        try:
+            # Index on transactions table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id)')
+
+            # Index on income table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_income_user_date ON income(user_id, date)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_income_user_id ON income(user_id)')
+
+            # Index on assets table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(asset_type)')
+
+            # Index on users table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(verification_token)')
+
+            # Index on exchange_rates table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_exchange_rates_user ON exchange_rates(user_id, from_currency, to_currency)')
+
+            # Index on asset_history table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_asset_history_asset ON asset_history(asset_id, recorded_at)')
+
+            db.commit()
+            print("Database indexes created successfully")
+        except Exception as e:
+            print(f"Error creating indexes: {e}")
 
         return True
     except Exception as e:

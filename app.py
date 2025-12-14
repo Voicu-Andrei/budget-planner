@@ -22,7 +22,7 @@ from math_engine import (
     get_spending_trends
 )
 from demo_data import generate_demo_data
-from email_utils import send_verification_email, send_welcome_email, generate_verification_token
+from email_utils import send_verification_email, send_welcome_email, send_password_reset_email, generate_verification_token
 
 
 def convert_currency(amount, from_currency, to_currency, user_id):
@@ -52,6 +52,74 @@ def convert_currency(amount, from_currency, to_currency, user_id):
 
     # Default to 1:1 if no rate found
     return amount
+
+
+def generate_recurring_transactions(user_id):
+    """Generate transactions from recurring templates that are due"""
+    db = get_db()
+    now = datetime.now()
+
+    # Get active recurring transactions
+    recurring = db.execute('''
+        SELECT * FROM recurring_transactions
+        WHERE user_id = ? AND is_active = 1
+    ''', (user_id,)).fetchall()
+
+    generated_count = 0
+
+    for r in recurring:
+        # Determine next date based on frequency
+        last_gen = datetime.strptime(r['last_generated'], '%Y-%m-%d') if r['last_generated'] else datetime.strptime(r['start_date'], '%Y-%m-%d')
+
+        next_date = None
+        if r['frequency'] == 'daily':
+            next_date = last_gen + timedelta(days=1)
+        elif r['frequency'] == 'weekly':
+            next_date = last_gen + timedelta(weeks=1)
+        elif r['frequency'] == 'bi-weekly':
+            next_date = last_gen + timedelta(weeks=2)
+        elif r['frequency'] == 'monthly':
+            # Add one month
+            if last_gen.month == 12:
+                next_date = last_gen.replace(year=last_gen.year + 1, month=1)
+            else:
+                next_date = last_gen.replace(month=last_gen.month + 1)
+        elif r['frequency'] == 'quarterly':
+            # Add 3 months
+            month = last_gen.month + 3
+            year = last_gen.year
+            if month > 12:
+                month -= 12
+                year += 1
+            next_date = last_gen.replace(year=year, month=month)
+        elif r['frequency'] == 'annually':
+            next_date = last_gen.replace(year=last_gen.year + 1)
+
+        # Check if we should generate this transaction
+        if next_date and next_date.date() <= now.date():
+            # Check if end_date has passed
+            if r['end_date']:
+                end = datetime.strptime(r['end_date'], '%Y-%m-%d')
+                if next_date > end:
+                    continue
+
+            # Create transaction
+            db.execute('''
+                INSERT INTO transactions (user_id, date, amount, category, description, currency, is_anomaly, z_score, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)
+            ''', (user_id, next_date, r['amount'], r['category'], f"{r['description']} (Auto)", r['currency'], now))
+
+            # Update last_generated
+            db.execute('''
+                UPDATE recurring_transactions
+                SET last_generated = ?
+                WHERE id = ?
+            ''', (next_date.strftime('%Y-%m-%d'), r['id']))
+
+            generated_count += 1
+
+    db.commit()
+    return generated_count
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
@@ -206,6 +274,91 @@ def resend_verification():
     send_verification_email(user['email'], user['name'], verification_token)
 
     return jsonify({'success': True, 'message': 'Verification email sent!'})
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Request password reset"""
+    if request.method == 'POST':
+        data = request.json if request.is_json else request.form
+        email = data.get('email')
+
+        db = get_db()
+        user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+
+        if user:
+            # Generate reset token
+            reset_token = generate_verification_token()
+            reset_expiry = datetime.now() + timedelta(hours=1)
+
+            db.execute('''
+                UPDATE users
+                SET reset_token = ?, reset_token_expiry = ?
+                WHERE id = ?
+            ''', (reset_token, reset_expiry, user['id']))
+            db.commit()
+
+            # Send reset email
+            send_password_reset_email(user['email'], user['name'], reset_token)
+
+        # Always return success to prevent email enumeration
+        if request.is_json:
+            return jsonify({'success': True, 'message': 'If that email exists, a reset link has been sent'})
+
+        return render_template('password_reset_sent.html', email=email)
+
+    return render_template('forgot_password.html')
+
+
+@app.route('/reset-password', methods=['GET', 'POST'])
+def reset_password():
+    """Reset password with token"""
+    token = request.args.get('token')
+
+    if not token:
+        return render_template('password_reset_error.html', error='Invalid reset link')
+
+    db = get_db()
+
+    if request.method == 'POST':
+        data = request.json if request.is_json else request.form
+        new_password = data.get('password')
+
+        # Find user with valid token
+        user = db.execute('''
+            SELECT * FROM users
+            WHERE reset_token = ? AND reset_token_expiry > ?
+        ''', (token, datetime.now())).fetchone()
+
+        if not user:
+            if request.is_json:
+                return jsonify({'success': False, 'error': 'Invalid or expired reset link'}), 400
+            return render_template('password_reset_error.html', error='Invalid or expired reset link')
+
+        # Update password
+        password_hash = generate_password_hash(new_password)
+        db.execute('''
+            UPDATE users
+            SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL
+            WHERE id = ?
+        ''', (password_hash, user['id']))
+        db.commit()
+
+        if request.is_json:
+            return jsonify({'success': True})
+
+        return render_template('password_reset_success.html')
+
+    # GET request - verify token and show form
+    user = db.execute('''
+        SELECT * FROM users
+        WHERE reset_token = ? AND reset_token_expiry > ?
+    ''', (token, datetime.now())).fetchone()
+
+    if not user:
+        return render_template('password_reset_error.html', error='Invalid or expired reset link')
+
+    return render_template('reset_password.html', token=token)
 
 
 @app.route('/logout')
@@ -810,6 +963,80 @@ def delete_transaction(transaction_id):
     db.execute('DELETE FROM transactions WHERE id = ? AND user_id = ?', (transaction_id, session['user_id']))
     db.commit()
     return jsonify({'success': True})
+
+
+@app.route('/api/recurring-transactions', methods=['GET', 'POST'])
+@login_required
+def recurring_transactions_api():
+    """API endpoint for recurring transactions management"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        data = request.json
+
+        # Parse recurring transaction data
+        amount = float(data['amount'])
+        category = data['category']
+        description = data.get('description', '')
+        currency = data.get('currency', 'USD')
+        frequency = data['frequency']
+        start_date = data['start_date']
+        end_date = data.get('end_date')
+
+        # Insert recurring transaction
+        db.execute('''
+            INSERT INTO recurring_transactions (user_id, amount, category, description, currency, frequency, start_date, end_date, last_generated, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?)
+        ''', (user_id, amount, category, description, currency, frequency, start_date, end_date, datetime.now()))
+        db.commit()
+
+        return jsonify({'success': True})
+
+    # GET - return all recurring transactions for current user
+    recurring = db.execute('''
+        SELECT * FROM recurring_transactions
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+    ''', (user_id,)).fetchall()
+
+    return jsonify({
+        'recurring': [dict(r) for r in recurring]
+    })
+
+
+@app.route('/api/recurring-transactions/<int:recurring_id>', methods=['DELETE', 'PUT'])
+@login_required
+def recurring_transaction_operations(recurring_id):
+    """Update or delete a recurring transaction"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'DELETE':
+        db.execute('DELETE FROM recurring_transactions WHERE id = ? AND user_id = ?', (recurring_id, user_id))
+        db.commit()
+        return jsonify({'success': True})
+
+    elif request.method == 'PUT':
+        data = request.json
+        is_active = data.get('is_active', 1)
+
+        db.execute('''
+            UPDATE recurring_transactions
+            SET is_active = ?
+            WHERE id = ? AND user_id = ?
+        ''', (is_active, recurring_id, user_id))
+        db.commit()
+
+        return jsonify({'success': True})
+
+
+@app.route('/api/generate-recurring')
+@login_required
+def generate_recurring_api():
+    """Generate pending recurring transactions"""
+    count = generate_recurring_transactions(session['user_id'])
+    return jsonify({'success': True, 'generated': count})
 
 
 @app.route('/api/income', methods=['GET', 'POST'])
