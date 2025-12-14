@@ -545,7 +545,7 @@ def transactions_api():
         currency = data.get('currency', 'USD')
 
         # Check for anomaly
-        is_anomaly, z_score = detect_anomaly(category, amount)
+        is_anomaly, z_score = detect_anomaly(category, amount, user_id=user_id)
 
         # Insert transaction with user_id and currency
         db.execute('''
@@ -707,15 +707,18 @@ def analysis():
 
 
 @app.route('/prediction')
+@login_required
 def prediction():
     """Monte Carlo prediction page"""
     return render_template('prediction.html')
 
 
 @app.route('/comparisons')
+@login_required
 def comparisons():
     """Comparison views page - month-over-month and year-over-year"""
     db = get_db()
+    user_id = session['user_id']
 
     # Get month-over-month data (last 6 months)
     month_over_month = []
@@ -726,8 +729,8 @@ def comparisons():
 
         total = db.execute('''
             SELECT SUM(amount) as total FROM transactions
-            WHERE date >= ? AND date < ?
-        ''', (month_start, next_month)).fetchone()['total'] or 0
+            WHERE date >= ? AND date < ? AND user_id = ?
+        ''', (month_start, next_month, user_id)).fetchone()['total'] or 0
 
         month_over_month.append({
             'month': month_start.strftime('%B %Y'),
@@ -740,8 +743,8 @@ def comparisons():
     next_month = (month_start + timedelta(days=32)).replace(day=1)
     current_month_total = db.execute('''
         SELECT SUM(amount) as total FROM transactions
-        WHERE date >= ? AND date < ?
-    ''', (month_start, next_month)).fetchone()['total'] or 0
+        WHERE date >= ? AND date < ? AND user_id = ?
+    ''', (month_start, next_month, user_id)).fetchone()['total'] or 0
 
     month_over_month.append({
         'month': month_start.strftime('%B %Y'),
@@ -765,8 +768,8 @@ def comparisons():
         for category in categories:
             total = db.execute('''
                 SELECT SUM(amount) as total FROM transactions
-                WHERE date >= ? AND date < ? AND category = ?
-            ''', (month_start, next_month, category)).fetchone()['total'] or 0
+                WHERE date >= ? AND date < ? AND category = ? AND user_id = ?
+            ''', (month_start, next_month, category, user_id)).fetchone()['total'] or 0
             category_data['categories'][category] = total
 
         category_comparison.append(category_data)
@@ -781,16 +784,16 @@ def comparisons():
         this_year_end = (this_year_start + timedelta(days=32)).replace(day=1)
         this_year_total = db.execute('''
             SELECT SUM(amount) as total FROM transactions
-            WHERE date >= ? AND date < ?
-        ''', (this_year_start, this_year_end)).fetchone()['total'] or 0
+            WHERE date >= ? AND date < ? AND user_id = ?
+        ''', (this_year_start, this_year_end, user_id)).fetchone()['total'] or 0
 
         # Last year
         last_year_start = datetime(current_year - 1, month_num, 1)
         last_year_end = (last_year_start + timedelta(days=32)).replace(day=1)
         last_year_total = db.execute('''
             SELECT SUM(amount) as total FROM transactions
-            WHERE date >= ? AND date < ?
-        ''', (last_year_start, last_year_end)).fetchone()['total'] or 0
+            WHERE date >= ? AND date < ? AND user_id = ?
+        ''', (last_year_start, last_year_end, user_id)).fetchone()['total'] or 0
 
         year_over_year.append({
             'month': this_year_start.strftime('%B'),
@@ -832,10 +835,9 @@ def comparison_data():
 
 
 @app.route('/api/update-account', methods=['POST'])
+@login_required
 def update_account():
     """Update user account information"""
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
 
     data = request.json
     name = data.get('name')
@@ -862,10 +864,9 @@ def update_account():
 
 
 @app.route('/api/change-password', methods=['POST'])
+@login_required
 def change_password():
     """Change user password"""
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
 
     data = request.json
     current_password = data.get('current_password')
@@ -1137,12 +1138,13 @@ def income_api():
         description = data.get('description', '')
         recurring = data.get('recurring', False)
         frequency = data.get('frequency', 'one-time')
+        currency = data.get('currency', 'USD')
 
         # Insert income record
         db.execute('''
-            INSERT INTO income (user_id, date, amount, source, description, recurring, frequency, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, date, amount, source, description, recurring, frequency, datetime.now()))
+            INSERT INTO income (user_id, date, amount, source, description, recurring, frequency, currency, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, date, amount, source, description, recurring, frequency, currency, datetime.now()))
         db.commit()
 
         return jsonify({'success': True})
@@ -1582,13 +1584,18 @@ def generate_insights(transactions, user, fixed_total):
     now = datetime.now()
     month_start = now.replace(day=1)
 
+    # Note: This function is called from dashboard, but doesn't receive user_id as parameter
+    # We need to get it from the database context
+    from flask import session
+    user_id = session.get('user_id')
+
     for category in ['Dining Out', 'Entertainment', 'Shopping']:
         current = db.execute('''
             SELECT SUM(amount) as total FROM transactions
-            WHERE category = ? AND date >= ?
-        ''', (category, month_start)).fetchone()['total'] or 0
+            WHERE category = ? AND date >= ? AND user_id = ?
+        ''', (category, month_start, user_id)).fetchone()['total'] or 0
 
-        stats = calculate_category_stats(category)
+        stats = calculate_category_stats(category, user_id=user_id)
         if stats and stats['mean'] > 0:
             if current > stats['mean'] * 1.3:
                 insights.append({

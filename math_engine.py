@@ -82,7 +82,7 @@ def calculate_category_stats(category, months=6, user_id=None):
     }
 
 
-def detect_anomaly(category, amount, threshold=2.0):
+def detect_anomaly(category, amount, threshold=2.0, user_id=None):
     """
     Detect if a transaction is an anomaly using z-score
 
@@ -94,7 +94,7 @@ def detect_anomaly(category, amount, threshold=2.0):
 
     Returns: (is_anomaly, z_score)
     """
-    stats = calculate_category_stats(category)
+    stats = calculate_category_stats(category, user_id=user_id)
 
     if not stats or stats['transaction_std'] == 0:
         return False, 0.0

@@ -74,9 +74,24 @@
                 <input type="date" id="income-date" class="form-control" required>
             </div>
 
-            <div class="form-group">
-                <label for="income-amount">Amount ($)</label>
-                <input type="number" id="income-amount" class="form-control" step="0.01" required>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="income-amount">Amount</label>
+                    <input type="number" id="income-amount" class="form-control" step="0.01" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="income-currency">Currency</label>
+                    <select id="income-currency" class="form-control">
+                        <option value="USD" selected>USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                        <option value="JPY">JPY</option>
+                        <option value="CAD">CAD</option>
+                        <option value="AUD">AUD</option>
+                        <option value="CHF">CHF</option>
+                    </select>
+                </div>
             </div>
 
             <div class="form-group">
@@ -270,6 +285,7 @@
         const data = {
             date: document.getElementById('income-date').value,
             amount: parseFloat(document.getElementById('income-amount').value),
+            currency: document.getElementById('income-currency').value,
             source: document.getElementById('income-source').value,
             description: document.getElementById('income-description').value,
             recurring: recurring,
