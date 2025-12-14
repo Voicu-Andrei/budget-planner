@@ -24,6 +24,35 @@ from math_engine import (
 from demo_data import generate_demo_data
 from email_utils import send_verification_email, send_welcome_email, generate_verification_token
 
+
+def convert_currency(amount, from_currency, to_currency, user_id):
+    """Convert amount from one currency to another using user's exchange rates"""
+    if from_currency == to_currency:
+        return amount
+
+    db = get_db()
+
+    # Try to find direct conversion rate
+    rate = db.execute('''
+        SELECT rate FROM exchange_rates
+        WHERE user_id = ? AND from_currency = ? AND to_currency = ?
+    ''', (user_id, from_currency, to_currency)).fetchone()
+
+    if rate:
+        return amount * rate['rate']
+
+    # Try reverse conversion (1/rate)
+    reverse_rate = db.execute('''
+        SELECT rate FROM exchange_rates
+        WHERE user_id = ? AND from_currency = ? AND to_currency = ?
+    ''', (user_id, to_currency, from_currency)).fetchone()
+
+    if reverse_rate:
+        return amount / reverse_rate['rate']
+
+    # Default to 1:1 if no rate found
+    return amount
+
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
@@ -359,15 +388,16 @@ def transactions_api():
         amount = float(data['amount'])
         category = data['category']
         description = data.get('description', '')
+        currency = data.get('currency', 'USD')
 
         # Check for anomaly
         is_anomaly, z_score = detect_anomaly(category, amount)
 
-        # Insert transaction with user_id
+        # Insert transaction with user_id and currency
         db.execute('''
-            INSERT INTO transactions (user_id, date, amount, category, description, is_anomaly, z_score, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, date, amount, category, description, is_anomaly, z_score, datetime.now()))
+            INSERT INTO transactions (user_id, date, amount, category, description, currency, is_anomaly, z_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, date, amount, category, description, currency, is_anomaly, z_score, datetime.now()))
         db.commit()
 
         return jsonify({
@@ -986,6 +1016,62 @@ def asset_operations(asset_id):
 def assets_page():
     """Assets & investments tracking page"""
     return render_template('assets.html')
+
+
+@app.route('/api/exchange-rates', methods=['GET', 'POST'])
+@login_required
+def exchange_rates_api():
+    """API endpoint for exchange rates management"""
+    db = get_db()
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        data = request.json
+        from_currency = data['from_currency']
+        to_currency = data['to_currency']
+        rate = float(data['rate'])
+
+        # Insert or update exchange rate
+        db.execute('''
+            INSERT INTO exchange_rates (user_id, from_currency, to_currency, rate, last_updated)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, from_currency, to_currency)
+            DO UPDATE SET rate = ?, last_updated = ?
+        ''', (user_id, from_currency, to_currency, rate, datetime.now(), rate, datetime.now()))
+        db.commit()
+
+        return jsonify({'success': True})
+
+    # GET - return all exchange rates for current user
+    rates = db.execute('''
+        SELECT * FROM exchange_rates
+        WHERE user_id = ?
+        ORDER BY from_currency, to_currency
+    ''', (user_id,)).fetchall()
+
+    return jsonify({
+        'rates': [dict(r) for r in rates]
+    })
+
+
+@app.route('/api/exchange-rates/<int:rate_id>', methods=['DELETE'])
+@login_required
+def delete_exchange_rate(rate_id):
+    """Delete an exchange rate"""
+    db = get_db()
+    user_id = session['user_id']
+
+    db.execute('DELETE FROM exchange_rates WHERE id = ? AND user_id = ?', (rate_id, user_id))
+    db.commit()
+
+    return jsonify({'success': True})
+
+
+@app.route('/currency-settings')
+@login_required
+def currency_settings_page():
+    """Currency settings page"""
+    return render_template('currency_settings.html')
 
 
 @app.route('/api/export/transactions')

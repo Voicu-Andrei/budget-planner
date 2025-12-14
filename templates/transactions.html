@@ -93,9 +93,22 @@
                 <input type="date" id="transaction-date" class="form-control" required>
             </div>
 
-            <div class="form-group">
-                <label for="transaction-amount">Amount ($)</label>
-                <input type="number" id="transaction-amount" class="form-control" step="0.01" required>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="transaction-amount">Amount</label>
+                    <input type="number" id="transaction-amount" class="form-control" step="0.01" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="transaction-currency">Currency</label>
+                    <select id="transaction-currency" class="form-control">
+                        <option value="USD" selected>USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                        <option value="JPY">JPY</option>
+                        <option value="CAD">CAD</option>
+                    </select>
+                </div>
             </div>
 
             <div class="form-group">
@@ -273,7 +286,8 @@
             date: document.getElementById('transaction-date').value,
             amount: parseFloat(document.getElementById('transaction-amount').value),
             category: document.getElementById('transaction-category').value,
-            description: document.getElementById('transaction-description').value
+            description: document.getElementById('transaction-description').value,
+            currency: document.getElementById('transaction-currency').value
         };
 
         fetch('/api/transactions', {

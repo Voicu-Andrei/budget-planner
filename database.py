@@ -141,6 +141,38 @@ def migrate_to_multiuser():
             )
         ''')
 
+        # Create exchange_rates table for currency conversion
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS exchange_rates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                from_currency TEXT NOT NULL,
+                to_currency TEXT NOT NULL,
+                rate REAL NOT NULL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, from_currency, to_currency),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+
+        # Add currency column to transactions if it doesn't exist
+        cursor.execute("PRAGMA table_info(transactions)")
+        transaction_columns = [col[1] for col in cursor.fetchall()]
+        if 'currency' not in transaction_columns:
+            cursor.execute('ALTER TABLE transactions ADD COLUMN currency TEXT DEFAULT "USD"')
+
+        # Add currency column to income if it doesn't exist (already added currency to assets earlier)
+        cursor.execute("PRAGMA table_info(income)")
+        income_columns = [col[1] for col in cursor.fetchall()]
+        if 'currency' not in income_columns:
+            cursor.execute('ALTER TABLE income ADD COLUMN currency TEXT DEFAULT "USD"')
+
+        # Add base_currency to user_settings if it doesn't exist
+        cursor.execute("PRAGMA table_info(user_settings)")
+        settings_columns = [col[1] for col in cursor.fetchall()]
+        if 'base_currency' not in settings_columns:
+            cursor.execute('ALTER TABLE user_settings ADD COLUMN base_currency TEXT DEFAULT "USD"')
+
         # Check if users table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
         if cursor.fetchone() is None:

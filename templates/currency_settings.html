@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+
+{% block title %}Currency Settings - Budget Planner{% endblock %}
+
+{% block content %}
+<div class="settings-page">
+    <h1>Currency Settings</h1>
+
+    <!-- Base Currency -->
+    <div class="card settings-section">
+        <h2>Base Currency</h2>
+        <p class="text-muted">All amounts will be converted to this currency for calculations and reports</p>
+
+        <div class="settings-grid">
+            <div class="setting-item">
+                <label for="base-currency">Base Currency</label>
+                <select id="base-currency" class="form-control">
+                    <option value="USD">USD - US Dollar</option>
+                    <option value="EUR">EUR - Euro</option>
+                    <option value="GBP">GBP - British Pound</option>
+                    <option value="JPY">JPY - Japanese Yen</option>
+                    <option value="CAD">CAD - Canadian Dollar</option>
+                    <option value="AUD">AUD - Australian Dollar</option>
+                    <option value="CHF">CHF - Swiss Franc</option>
+                    <option value="CNY">CNY - Chinese Yuan</option>
+                    <option value="INR">INR - Indian Rupee</option>
+                </select>
+            </div>
+        </div>
+
+        <button onclick="updateBaseCurrency()" class="btn btn-primary">Save Base Currency</button>
+    </div>
+
+    <!-- Exchange Rates -->
+    <div class="card settings-section">
+        <h2>Exchange Rates</h2>
+        <p class="text-muted">Set custom exchange rates for currency conversion</p>
+
+        <!-- Exchange Rates Table -->
+        {% if 1 %}
+        <table class="fixed-expenses-table">
+            <thead>
+                <tr>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Rate</th>
+                    <th>Last Updated</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="rates-tbody">
+                <!-- Rates will be loaded here -->
+            </tbody>
+        </table>
+        {% endif %}
+
+        <button onclick="showAddRate()" class="btn btn-secondary">Add Exchange Rate</button>
+    </div>
+
+    <!-- Common Currencies Quick Reference -->
+    <div class="card settings-section">
+        <h2>Quick Reference</h2>
+        <p class="text-muted">Common currency codes</p>
+
+        <div class="currency-grid">
+            <div class="currency-ref">
+                <strong>USD</strong> - US Dollar
+            </div>
+            <div class="currency-ref">
+                <strong>EUR</strong> - Euro
+            </div>
+            <div class="currency-ref">
+                <strong>GBP</strong> - British Pound
+            </div>
+            <div class="currency-ref">
+                <strong>JPY</strong> - Japanese Yen
+            </div>
+            <div class="currency-ref">
+                <strong>CAD</strong> - Canadian Dollar
+            </div>
+            <div class="currency-ref">
+                <strong>AUD</strong> - Australian Dollar
+            </div>
+            <div class="currency-ref">
+                <strong>CHF</strong> - Swiss Franc
+            </div>
+            <div class="currency-ref">
+                <strong>CNY</strong> - Chinese Yuan
+            </div>
+            <div class="currency-ref">
+                <strong>INR</strong> - Indian Rupee
+            </div>
+            <div class="currency-ref">
+                <strong>BRL</strong> - Brazilian Real
+            </div>
+            <div class="currency-ref">
+                <strong>MXN</strong> - Mexican Peso
+            </div>
+            <div class="currency-ref">
+                <strong>SGD</strong> - Singapore Dollar
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Rate Modal -->
+<div id="add-rate-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h2>Add Exchange Rate</h2>
+
+        <form id="rate-form" onsubmit="submitRate(event)">
+            <div class="form-group">
+                <label for="from-currency">From Currency</label>
+                <input type="text" id="from-currency" class="form-control" placeholder="USD" maxlength="3" required>
+            </div>
+
+            <div class="form-group">
+                <label for="to-currency">To Currency</label>
+                <input type="text" id="to-currency" class="form-control" placeholder="EUR" maxlength="3" required>
+            </div>
+
+            <div class="form-group">
+                <label for="rate">Exchange Rate</label>
+                <input type="number" id="rate" class="form-control" step="0.000001" placeholder="0.85" required>
+                <small class="form-help">1 FROM = X TO (e.g., 1 USD = 0.85 EUR)</small>
+            </div>
+
+            <div class="button-group">
+                <button type="button" onclick="closeModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Rate</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Load exchange rates on page load
+    loadRates();
+
+    function loadRates() {
+        fetch('/api/exchange-rates')
+            .then(response => response.json())
+            .then(data => {
+                renderRatesTable(data.rates);
+            });
+    }
+
+    function renderRatesTable(rates) {
+        const tbody = document.getElementById('rates-tbody');
+        tbody.innerHTML = '';
+
+        if (rates.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="no-data">No exchange rates set. Add your first rate to enable multi-currency support.</td></tr>';
+            return;
+        }
+
+        rates.forEach(rate => {
+            const row = document.createElement('tr');
+            const lastUpdated = new Date(rate.last_updated).toLocaleDateString();
+
+            row.innerHTML = `
+                <td>${rate.from_currency}</td>
+                <td>${rate.to_currency}</td>
+                <td>${rate.rate.toFixed(6)}</td>
+                <td>${lastUpdated}</td>
+                <td>
+                    <button onclick="deleteRate(${rate.id})" class="btn btn-danger-small">Delete</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    function showAddRate() {
+        document.getElementById('add-rate-modal').style.display = 'block';
+    }
+
+    function closeModal() {
+        document.getElementById('add-rate-modal').style.display = 'none';
+    }
+
+    function submitRate(event) {
+        event.preventDefault();
+
+        const data = {
+            from_currency: document.getElementById('from-currency').value.toUpperCase(),
+            to_currency: document.getElementById('to-currency').value.toUpperCase(),
+            rate: parseFloat(document.getElementById('rate').value)
+        };
+
+        fetch('/api/exchange-rates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                closeModal();
+                document.getElementById('rate-form').reset();
+                loadRates();
+            }
+        });
+    }
+
+    function deleteRate(id) {
+        if (confirm('Are you sure you want to delete this exchange rate?')) {
+            fetch(`/api/exchange-rates/${id}`, {
+                method: 'DELETE'
+            })
+            .then(() => {
+                loadRates();
+            });
+        }
+    }
+
+    function updateBaseCurrency() {
+        const baseCurrency = document.getElementById('base-currency').value;
+        // This would typically update user settings
+        alert('Base currency updated to ' + baseCurrency);
+    }
+
+    window.onclick = function(event) {
+        const modal = document.getElementById('add-rate-modal');
+        if (event.target == modal) {
+            closeModal();
+        }
+    }
+</script>
+
+<style>
+    .currency-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .currency-ref {
+        padding: 0.75rem;
+        background: var(--bg-light);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+    }
+
+    .form-help {
+        display: block;
+        margin-top: 0.25rem;
+        font-size: 0.875rem;
+        color: var(--text-gray);
+    }
+</style>
+{% endblock %}
