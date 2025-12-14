@@ -14,7 +14,7 @@ from database import get_db
 
 
 def generate_demo_data(user_id=None):
-    """Generate 6 months of demo transaction data"""
+    """Generate 6 months of demo transaction data and all related data"""
     db = get_db()
 
     if user_id is None:
@@ -24,6 +24,11 @@ def generate_demo_data(user_id=None):
 
     # Clear existing demo data for this user (if any)
     db.execute('DELETE FROM transactions WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM income WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM assets WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM recurring_transactions WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM tags WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM exchange_rates WHERE user_id = ?', (user_id,))
     db.commit()
 
     # Categories with their monthly spending parameters (mean, std_dev)
@@ -120,8 +125,29 @@ def generate_demo_data(user_id=None):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (user_id, anomaly_date, anomaly_amount, anomaly_category, anomaly_desc, True, 3.5, datetime.now()))
 
+    # Generate income data
+    generate_income_data(db, user_id, start_date)
+
+    # Generate assets
+    generate_assets_data(db, user_id)
+
+    # Generate tags and assign to transactions
+    generate_tags_data(db, user_id)
+
+    # Generate recurring transactions
+    generate_recurring_data(db, user_id)
+
+    # Generate exchange rates
+    generate_exchange_rates(db, user_id)
+
     db.commit()
-    print(f"Generated demo data: {db.execute('SELECT COUNT(*) as count FROM transactions').fetchone()['count']} transactions")
+
+    transaction_count = db.execute('SELECT COUNT(*) as count FROM transactions WHERE user_id = ?', (user_id,)).fetchone()['count']
+    income_count = db.execute('SELECT COUNT(*) as count FROM income WHERE user_id = ?', (user_id,)).fetchone()['count']
+    asset_count = db.execute('SELECT COUNT(*) as count FROM assets WHERE user_id = ?', (user_id,)).fetchone()['count']
+    tag_count = db.execute('SELECT COUNT(*) as count FROM tags WHERE user_id = ?', (user_id,)).fetchone()['count']
+
+    print(f"Generated demo data: {transaction_count} transactions, {income_count} income records, {asset_count} assets, {tag_count} tags")
 
 
 def generate_transaction_amounts(total, count, amount_range):
@@ -208,6 +234,153 @@ def generate_description(category, amount):
 
     options = descriptions.get(category, ['Purchase'])
     return np.random.choice(options)
+
+
+def generate_income_data(db, user_id, start_date):
+    """Generate 6 months of realistic income data"""
+    income_sources = [
+        ('Salary', 3500, 'monthly', True, 'Monthly salary'),
+        ('Freelance', 800, 'monthly', True, 'Freelance work'),
+    ]
+
+    # Generate regular monthly income
+    for month_offset in range(6):
+        month_start = start_date + timedelta(days=30 * month_offset)
+
+        for source, base_amount, frequency, recurring, description in income_sources:
+            # Add some variation to income
+            amount = base_amount + np.random.uniform(-50, 150)
+
+            # Random day in month
+            day = np.random.randint(1, 28)
+            income_date = month_start + timedelta(days=day)
+
+            db.execute('''
+                INSERT INTO income (user_id, date, amount, source, description, recurring, frequency, currency, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (user_id, income_date, round(amount, 2), source, description, recurring, frequency, 'USD', datetime.now()))
+
+    # Add some one-time income events
+    bonus_date = start_date + timedelta(days=120)
+    db.execute('''
+        INSERT INTO income (user_id, date, amount, source, description, recurring, frequency, currency, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, bonus_date, 1500, 'Bonus', 'Performance bonus', False, 'one-time', 'USD', datetime.now()))
+
+    gift_date = start_date + timedelta(days=60)
+    db.execute('''
+        INSERT INTO income (user_id, date, amount, source, description, recurring, frequency, currency, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, gift_date, 200, 'Gift', 'Birthday gift', False, 'one-time', 'USD', datetime.now()))
+
+
+def generate_assets_data(db, user_id):
+    """Generate realistic asset portfolio"""
+    assets = [
+        # (type, name, quantity, current_value, purchase_value, currency, description)
+        ('stock', 'AAPL Stock', 10, 1850.00, 1500.00, 'USD', '10 shares of Apple Inc.'),
+        ('stock', 'MSFT Stock', 5, 1925.00, 1750.00, 'USD', '5 shares of Microsoft'),
+        ('savings', 'High-Yield Savings', 1, 5000.00, 5000.00, 'USD', 'Emergency fund savings account'),
+        ('crypto', 'Bitcoin', 0.05, 2200.00, 1800.00, 'USD', '0.05 BTC'),
+        ('crypto', 'Ethereum', 1, 2400.00, 2000.00, 'USD', '1 ETH'),
+        ('property', 'Real Estate Investment', 1, 50000.00, 45000.00, 'USD', 'REIT investment'),
+        ('bond', 'US Treasury Bonds', 10, 10200.00, 10000.00, 'USD', '10-year treasury bonds'),
+        ('other', 'Gold', 2, 4000.00, 3800.00, 'USD', '2 oz of gold')
+    ]
+
+    # Purchase dates spread over last 2 years
+    base_date = datetime.now() - timedelta(days=730)
+
+    for i, (asset_type, name, quantity, current_value, purchase_value, currency, description) in enumerate(assets):
+        purchase_date = base_date + timedelta(days=i * 90)
+
+        db.execute('''
+            INSERT INTO assets (user_id, asset_type, name, quantity, current_value, purchase_value, purchase_date, currency, description, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, asset_type, name, quantity, current_value, purchase_value, purchase_date, currency, description, datetime.now()))
+
+
+def generate_tags_data(db, user_id):
+    """Generate tags and assign them to transactions"""
+    tags = [
+        ('Work Related', '#3b82f6'),
+        ('Necessary', '#10b981'),
+        ('Luxury', '#f59e0b'),
+        ('Tax Deductible', '#8b5cf6'),
+        ('Subscription', '#ef4444'),
+        ('Health', '#ec4899')
+    ]
+
+    tag_ids = []
+    for name, color in tags:
+        cursor = db.execute('''
+            INSERT INTO tags (user_id, name, color, created_at)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, name, color, datetime.now()))
+        tag_ids.append(cursor.lastrowid)
+
+    # Assign tags to random transactions
+    transactions = db.execute('SELECT id FROM transactions WHERE user_id = ? LIMIT 100', (user_id,)).fetchall()
+
+    for transaction in transactions:
+        # Randomly assign 0-2 tags to each transaction
+        num_tags = np.random.choice([0, 1, 1, 2], p=[0.3, 0.4, 0.2, 0.1])
+
+        if num_tags > 0:
+            selected_tags = np.random.choice(tag_ids, size=num_tags, replace=False)
+            for tag_id in selected_tags:
+                try:
+                    db.execute('''
+                        INSERT INTO transaction_tags (transaction_id, tag_id)
+                        VALUES (?, ?)
+                    ''', (transaction['id'], int(tag_id)))
+                except:
+                    pass  # Skip if duplicate
+
+
+def generate_recurring_data(db, user_id):
+    """Generate recurring transaction templates"""
+    recurring = [
+        # (amount, category, description, currency, frequency)
+        (15.99, 'Entertainment', 'Netflix Subscription', 'USD', 'monthly'),
+        (9.99, 'Entertainment', 'Spotify Premium', 'USD', 'monthly'),
+        (50.00, 'Transportation', 'Monthly Transit Pass', 'USD', 'monthly'),
+        (30.00, 'Other', 'Gym Membership', 'USD', 'monthly'),
+        (12.00, 'Other', 'Cloud Storage', 'USD', 'monthly'),
+        (100.00, 'Food & Groceries', 'Weekly Groceries', 'USD', 'weekly'),
+        (25.00, 'Dining Out', 'Weekly Coffee', 'USD', 'weekly')
+    ]
+
+    start_date = datetime.now() - timedelta(days=90)
+
+    for amount, category, description, currency, frequency in recurring:
+        db.execute('''
+            INSERT INTO recurring_transactions (user_id, amount, category, description, currency, frequency, start_date, last_generated, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, amount, category, description, currency, frequency, start_date, start_date, True, datetime.now()))
+
+
+def generate_exchange_rates(db, user_id):
+    """Generate common exchange rates"""
+    rates = [
+        # (from_currency, to_currency, rate)
+        ('USD', 'EUR', 0.92),
+        ('USD', 'GBP', 0.79),
+        ('USD', 'JPY', 149.50),
+        ('USD', 'CAD', 1.36),
+        ('USD', 'AUD', 1.53),
+        ('EUR', 'USD', 1.09),
+        ('GBP', 'USD', 1.27),
+        ('JPY', 'USD', 0.0067),
+        ('CAD', 'USD', 0.74),
+        ('AUD', 'USD', 0.65)
+    ]
+
+    for from_curr, to_curr, rate in rates:
+        db.execute('''
+            INSERT INTO exchange_rates (user_id, from_currency, to_currency, rate, last_updated)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (user_id, from_curr, to_curr, rate, datetime.now()))
 
 
 def initialize_demo_user():
