@@ -154,6 +154,7 @@ def migrate_to_multiuser():
                 start_date DATE NOT NULL,
                 end_date DATE,
                 last_generated DATE,
+                next_due_date DATE,
                 is_active BOOLEAN DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
@@ -348,6 +349,45 @@ def migrate_to_multiuser():
             db.commit()
         except Exception as e:
             print(f"Error adding verification/reset columns: {e}")
+
+        # Add next_due_date to recurring_transactions if it doesn't exist
+        cursor.execute("PRAGMA table_info(recurring_transactions)")
+        recurring_columns = [col[1] for col in cursor.fetchall()]
+        if 'next_due_date' not in recurring_columns:
+            cursor.execute('ALTER TABLE recurring_transactions ADD COLUMN next_due_date DATE')
+            print("Added next_due_date column to recurring_transactions table")
+
+        # Migrate fixed_expenses to recurring_transactions
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='fixed_expenses'")
+            if cursor.fetchone():
+                # Check if there's data to migrate
+                cursor.execute('SELECT COUNT(*) FROM fixed_expenses')
+                if cursor.fetchone()[0] > 0:
+                    print("Migrating fixed expenses to recurring transactions...")
+                    cursor.execute('''
+                        INSERT INTO recurring_transactions
+                            (user_id, amount, category, description, currency, frequency, start_date, last_generated, next_due_date, is_active, created_at)
+                        SELECT
+                            user_id,
+                            amount,
+                            'Other' as category,
+                            name as description,
+                            'USD' as currency,
+                            frequency,
+                            date('now', '-30 days') as start_date,
+                            date('now', '-30 days') as last_generated,
+                            date('now') as next_due_date,
+                            1 as is_active,
+                            created_at
+                        FROM fixed_expenses
+                        WHERE user_id IS NOT NULL
+                    ''')
+                    migrated = cursor.rowcount
+                    print(f"Migrated {migrated} fixed expenses to recurring transactions")
+                    db.commit()
+        except Exception as e:
+            print(f"Error migrating fixed expenses: {e}")
 
         # Create indexes for better performance
         try:

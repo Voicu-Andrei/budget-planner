@@ -352,12 +352,23 @@ def generate_recurring_data(db, user_id):
     ]
 
     start_date = datetime.now() - timedelta(days=90)
+    now = datetime.now()
 
     for amount, category, description, currency, frequency in recurring:
+        # Calculate next due date based on frequency
+        if frequency == 'weekly':
+            next_due = now + timedelta(days=7)
+        elif frequency == 'bi-weekly':
+            next_due = now + timedelta(days=14)
+        elif frequency == 'monthly':
+            next_due = now + timedelta(days=30)
+        else:
+            next_due = now
+
         db.execute('''
-            INSERT INTO recurring_transactions (user_id, amount, category, description, currency, frequency, start_date, last_generated, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, amount, category, description, currency, frequency, start_date, start_date, True, datetime.now()))
+            INSERT INTO recurring_transactions (user_id, amount, category, description, currency, frequency, start_date, last_generated, next_due_date, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, amount, category, description, currency, frequency, start_date, start_date, next_due, True, datetime.now()))
 
 
 def generate_exchange_rates(db, user_id):

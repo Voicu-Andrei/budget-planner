@@ -986,11 +986,28 @@ def recurring_transactions_api():
         start_date = data['start_date']
         end_date = data.get('end_date')
 
+        # Calculate next due date based on frequency
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        if frequency == 'daily':
+            next_due = start_dt + timedelta(days=1)
+        elif frequency == 'weekly':
+            next_due = start_dt + timedelta(days=7)
+        elif frequency == 'bi-weekly':
+            next_due = start_dt + timedelta(days=14)
+        elif frequency == 'monthly':
+            next_due = start_dt + timedelta(days=30)
+        elif frequency == 'quarterly':
+            next_due = start_dt + timedelta(days=90)
+        elif frequency == 'annually':
+            next_due = start_dt + timedelta(days=365)
+        else:
+            next_due = start_dt
+
         # Insert recurring transaction
         db.execute('''
-            INSERT INTO recurring_transactions (user_id, amount, category, description, currency, frequency, start_date, end_date, last_generated, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?)
-        ''', (user_id, amount, category, description, currency, frequency, start_date, end_date, datetime.now()))
+            INSERT INTO recurring_transactions (user_id, amount, category, description, currency, frequency, start_date, end_date, last_generated, next_due_date, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1, ?)
+        ''', (user_id, amount, category, description, currency, frequency, start_date, end_date, next_due.date(), datetime.now()))
         db.commit()
 
         return jsonify({'success': True})
@@ -1007,7 +1024,7 @@ def recurring_transactions_api():
     })
 
 
-@app.route('/api/recurring-transactions/<int:recurring_id>', methods=['DELETE', 'PUT'])
+@app.route('/api/recurring-transactions/<int:recurring_id>', methods=['DELETE', 'PUT', 'PATCH'])
 @login_required
 def recurring_transaction_operations(recurring_id):
     """Update or delete a recurring transaction"""
@@ -1019,7 +1036,7 @@ def recurring_transaction_operations(recurring_id):
         db.commit()
         return jsonify({'success': True})
 
-    elif request.method == 'PUT':
+    elif request.method in ['PUT', 'PATCH']:
         data = request.json
         is_active = data.get('is_active', 1)
 
@@ -1033,7 +1050,8 @@ def recurring_transaction_operations(recurring_id):
         return jsonify({'success': True})
 
 
-@app.route('/api/generate-recurring')
+@app.route('/api/generate-recurring', methods=['POST'])
+@app.route('/api/recurring-transactions/generate', methods=['POST'])
 @login_required
 def generate_recurring_api():
     """Generate pending recurring transactions"""
@@ -1206,7 +1224,7 @@ def delete_income(income_id):
 @app.route('/income')
 @login_required
 def income_page():
-    """Income tracking page"""
+    """Income tracking page with budget configuration"""
     db = get_db()
     user_id = session['user_id']
 
@@ -1221,7 +1239,12 @@ def income_page():
 
     total_this_month = income['total'] if income['total'] else 0
 
-    return render_template('income.html', total_this_month=total_this_month)
+    # Get user settings for budget configuration
+    user = db.execute('SELECT * FROM user_settings WHERE user_id = ?', (user_id,)).fetchone()
+    if not user:
+        user = {'monthly_budget': 0, 'savings_goal': 0}
+
+    return render_template('income.html', total_this_month=total_this_month, user=user)
 
 
 @app.route('/api/assets', methods=['GET', 'POST'])
